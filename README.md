@@ -32,7 +32,7 @@ memory-mapped I/O, and a 3-stage pipeline with specialized register behaviors.
 
 ### INSTRUCTION FORMAT
 - `[15:12]` = opcode (4 bits)
-- `[11:8]`  = rd (destination register, 4 bits)
+- `[11:8]`  = rd (destination register, 4 bits)  
 - `[7:4]`   = rs1 (source register 1, 4 bits)  
 - `[3:0]`   = rs2 (source register 2, 4 bits) OR imm4 (4-bit immediate)
 - `[7:0]`   = imm8 (8-bit immediate for ALI/SUI)
@@ -127,6 +127,16 @@ All I/O devices are accessed via memory-mapped registers at addresses 0x8000-0xF
 - Each cell has 4-bit foreground + 4-bit background color
 - Palette mode per cell row: 0=16-color VGA, 1=16-level grayscale
 - Text mode: 40x25 chars, 8x8 ROM font, supports control codes
+
+### ROM (0xFFC0-0xFFCF)
+
+| ADDRESS | NAME            | R/W | DESCRIPTION                         |
+|---------|-----------------|-----|-------------------------------------|
+| 0xFFC0  | ROM_ADDR        | W   | Word address (write triggers read) |
+| 0xFFC1  | ROM_DATA        | R   | Read data (16-bit word)            |
+| 0xFFC2  | ROM_STATUS      | R   | [0]=Data valid                     |
+
+**NOTES:** 64K words (128KB) stored in SPI flash at 2MB offset. Quad-SPI interface at 50MHz. Write to ROM_ADDR triggers read, poll ROM_STATUS[0] for completion (~880ns).
 
 ### AUDIO (0xFFB0-0xFFBF)
 
