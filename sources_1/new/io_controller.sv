@@ -32,7 +32,11 @@ module io_controller (
     
     // Quad SPI Flash Interface
     output logic        QspiCSn,         // Chip select for SPI flash
-    inout  logic [3:0]  QspiDB           // Quad SPI data lines
+    inout  logic [3:0]  QspiDB,          // Quad SPI data lines
+    
+    // PS/2 Keyboard Interface
+    input  logic        PS2Clk,          // PS/2 clock from keyboard
+    input  logic        PS2Data          // PS/2 data from keyboard
 );
 
     // This I/O controller has intentional hazards for timing optimization:
@@ -54,6 +58,7 @@ module io_controller (
     localparam logic [10:0] VGA_DEVICE       = 11'h7FD; // Device 2045: 0xFFD0-0xFFDF
     localparam logic [10:0] ROM_DEVICE       = 11'h7FC; // Device 2044: 0xFFC0-0xFFCF
     localparam logic [10:0] AUDIO_DEVICE     = 11'h7FB; // Device 2043: 0xFFB0-0xFFBF
+    localparam logic [10:0] KEYBOARD_DEVICE  = 11'h7FA; // Device 2042: 0xFFA0-0xFFAF
     
     // Stage 2->3 pipeline registers
     logic [10:0] device_id_reg;       // Which device (extracted from address)
@@ -73,6 +78,8 @@ module io_controller (
     logic        audio_device_select; // Audio device selected
     logic [15:0] rom_rdata;           // Read data from ROM controller
     logic        rom_device_select;   // ROM device selected
+    logic [15:0] keyboard_rdata;      // Read data from Keyboard controller
+    logic        keyboard_device_select; // Keyboard device selected
     
     // Stage 2: Address field extraction and pipelining
     // Extract device ID and offset
@@ -103,6 +110,7 @@ module io_controller (
     assign vga_device_select = (device_id_reg == VGA_DEVICE);
     assign audio_device_select = (device_id_reg == AUDIO_DEVICE);
     assign rom_device_select = (device_id_reg == ROM_DEVICE);
+    assign keyboard_device_select = (device_id_reg == KEYBOARD_DEVICE);
     
     // Stage 3: Read data multiplexing using device ID
     always_comb begin
@@ -127,6 +135,10 @@ module io_controller (
                 AUDIO_DEVICE: begin
                     // Audio device reads (Device 2043) - handled by Audio controller
                     io_rdata = audio_rdata;
+                end
+                KEYBOARD_DEVICE: begin
+                    // Keyboard device reads (Device 2042) - handled by Keyboard controller
+                    io_rdata = keyboard_rdata;
                 end
                 default: begin
                     io_rdata = 16'hFFFF;  // Unmapped device (bus pull-ups)
@@ -230,6 +242,24 @@ module io_controller (
         // Quad SPI Flash Interface
         .QspiCSn(QspiCSn),
         .QspiDB(QspiDB)
+    );
+    
+    // Keyboard Controller instantiation (PS/2)
+    keyboard_controller keyboard_controller (
+        .clk(clk),
+        .reset(reset),
+        
+        // I/O Controller Interface
+        .device_select(keyboard_device_select),
+        .register_offset(register_offset_reg),
+        .read_req(read_req_reg),
+        .write_req(write_req_reg),
+        .wdata(wdata_reg),
+        .rdata(keyboard_rdata),
+        
+        // PS/2 Interface
+        .PS2Clk(PS2Clk),
+        .PS2Data(PS2Data)
     );
 
 endmodule

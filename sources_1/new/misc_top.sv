@@ -48,7 +48,11 @@ module misc_top (
     
     // Quad SPI Flash Interface
     output logic        QspiCSn,      // Chip select for SPI flash
-    inout  logic [3:0]  QspiDB        // Quad SPI data lines
+    inout  logic [3:0]  QspiDB,       // Quad SPI data lines
+    
+    // PS/2 Keyboard Interface
+    input  logic        PS2Clk,       // PS/2 clock from keyboard
+    input  logic        PS2Data       // PS/2 data from keyboard
 );
 
     // Speed control signals
@@ -493,7 +497,7 @@ module misc_top (
         .rdata(cpu_dmem_rdata)
     );
     
-    // I/O Controller (handles all memory-mapped I/O devices including ROM)
+    // I/O Controller (handles all memory-mapped I/O devices including ROM and Keyboard)
     io_controller io_controller (
         .clk(clk),
         .clk_en(cpu_clk_en),             // Same clock enable as core
@@ -529,7 +533,11 @@ module misc_top (
         
         // Quad SPI Flash Interface
         .QspiCSn(QspiCSn),               // Chip select for SPI flash
-        .QspiDB(QspiDB)                  // Quad SPI data lines
+        .QspiDB(QspiDB),                 // Quad SPI data lines
+        
+        // PS/2 Keyboard Interface
+        .PS2Clk(PS2Clk),                // PS/2 clock from keyboard
+        .PS2Data(PS2Data)               // PS/2 data from keyboard
     );
     
     // Connect same clock signals to bottom row for ADC
