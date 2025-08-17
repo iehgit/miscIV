@@ -283,7 +283,6 @@ module audio_controller (
     logic [4:0] lrck_counter;      // Counts SCLK periods for LRCK (0-31 per channel)
     logic       sclk_int;          // Internal SCLK
     logic       lrck_int;          // Internal LRCK
-    logic       sclk_rising;       // SCLK rising edge pulse
     logic       sclk_falling;      // SCLK falling edge pulse
     
     always_ff @(posedge clk_audio) begin
@@ -311,7 +310,6 @@ module audio_controller (
     always_ff @(posedge clk_audio) begin
         sclk_prev <= sclk_int;
     end
-    assign sclk_rising = sclk_int && !sclk_prev;
     assign sclk_falling = !sclk_int && sclk_prev;
     
     // Sawtooth duration timer (independent prescaler)
