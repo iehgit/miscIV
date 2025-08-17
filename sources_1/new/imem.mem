@@ -1,0 +1,560 @@
+// Eight Tests, followed by UART demo, followed by halt loop
+
+// Set up LED memory-mapped address = 0xFFFF
+@000 92FF  // SUI R2, 0xFF  ; R2 = 0xFF00 (set upper 8 bits to 0xFF)  
+@001 82FF  // ALI R2, 0xFF  ; R2 = 0xFFFF (add 0xFF to lower 8 bits)
+
+// Set up DMEM addresses for data storage
+@002 9301  // SUI R3, 0x01  ; R3 = 0x0100 (DMEM address for LOAD-use test)
+@003 8300  // ALI R3, 0x00  ; R3 = 0x0100 
+@004 9402  // SUI R4, 0x02  ; R4 = 0x0200 (DMEM address for LOAD branch target)
+@005 8400  // ALI R4, 0x00  ; R4 = 0x0200
+
+// TEST 1: R15 read test - Read current PC and verify it's correct
+@006 45F0  // ADD R5, R15, R0  ; R5 = current PC (should be 0x006)
+@007 8606  // ALI R6, 0x06   ; R6 = 0x0006 (expected PC value)
+@008 5565  // SUB R5, R6, R5  ; R5 = R6 - R5 = 0x006 - 0x006 = 0 if correct
+@009 EF53  // CAIZ R15, R5, 0x3  ; If R5==0, branch to current_PC + 3 = 0x00C
+
+// R15 test failed path - skip LED0 setting, jump to next test
+@00A 8110  // ALI R1, 0x10   ; R1 = 0x0010 (absolute target address)
+@00B 4F10  // ADD R15, R1, R0 ; Branch to 0x0010 (next test)
+
+// R15 test passed - set LED0, then continue to next test
+@00C C820  // LOAD R8, R2, R0  ; Load current LED value from 0xFFFF
+@00D 8701  // ALI R7, 0x01   ; R7 = 0x0001 (LED0 bit)  
+@00E 2878  // OR R8, R7, R8   ; FIXED: OR with 0x0001 (LED0 bit)
+@00F D820  // STORE R8, R2, R0 ; Store back to LEDs (LED0=1, R15 test passed)
+
+// TEST 2: LOAD-use hazard test + ALU branch
+// Store test value at DMEM[0x0100] 
+@010 9920  // SUI R9, 0x20   ; R9 = 0x2000 (test value)
+@011 8930  // ALI R9, 0x30   ; R9 = 0x2030 (test value)
+@012 D930  // STORE R9, R3, R0 ; Store 0x2030 to DMEM[0x0100]
+
+// LOAD-use hazard: LOAD immediately followed by use
+@013 CA30  // LOAD R10, R3, R0  ; Load from DMEM[0x0100] → R10 = 0x2030
+@014 4AAA  // ADD R10, R10, R10 ; LOAD-use hazard! R10 = 0x2030 + 0x2030 = 0x4060
+
+// ALU branch test: Check if LOAD-use result is correct
+@015 9C40  // SUI R12, 0x40   ; R12 = 0x4000 (expected upper part)
+@016 8C60  // ALI R12, 0x60   ; R12 = 0x4060 (expected result)
+@017 5CAC  // SUB R12, R10, R12 ; R12 = R10 - R12, should be 0 if LOAD-use worked
+@018 EFC3  // CAIZ R15, R12, 0x3 ; If R12==0, branch to current_PC + 3 = 0x01B
+
+// ALU branch/LOAD-use failed - skip LED1 setting, jump to next test
+@019 811F  // ALI R1, 0x1F   ; R1 = 0x001F (absolute target address)
+@01A 4F10  // ADD R15, R1, R0 ; Branch to 0x001F (next test)
+
+// ALU branch passed - set LED1  
+@01B C820  // LOAD R8, R2, R0  ; Load current LED value from 0xFFFF
+@01C 8702  // ALI R7, 0x02   ; R7 = 0x0002 (LED1 bit)
+@01D 2878  // OR R8, R7, R8  ; OR with 0x0002 (LED1 bit) 
+@01E D820  // STORE R8, R2, R0 ; Store back to LEDs (LED1=1, ALU branch passed)
+
+// TEST 3: LOAD branch test
+// Store LOAD branch target at DMEM[0x0200]
+@01F 8D50  // ALI R13, 0x50   ; R13 = 0x0050 (target address)  
+@020 DD40  // STORE R13, R4, R0 ; Store 0x0050 to DMEM[0x0200]
+
+// LOAD branch: Load branch target and branch to it
+@021 CF40  // LOAD R15, R4, R0 ; Load from DMEM[0x0200]=0x0050, branch to 0x050
+
+// Should not execute (2-cycle branch delay)
+@022 0000  // AND R0, R0, R0  ; NOP - should be skipped
+@023 0000  // AND R0, R0, R0  ; NOP - should be skipped
+
+// Continue with fail path (if LOAD branch didn't work)
+@024 0000  // AND R0, R0, R0  ; Continue execution (LOAD branch failed)
+@025 0000  // AND R0, R0, R0  ; Final endless loop for failed case
+@026 8527  // ALI R5, 0x27   ; R5 = 0x0027 (the branch instruction address)
+@027 4F50  // ADD R15, R5, R0 ; Branch to 0x0027 (endless loop - branches to itself)
+
+// Unused space
+@028 0000  // NOP
+@029 0000  // NOP
+@02A 0000  // NOP
+@02B 0000  // NOP
+@02C 0000  // NOP
+@02D 0000  // NOP
+@02E 0000  // NOP
+@02F 0000  // NOP
+@030 0000  // NOP
+@031 0000  // NOP
+@032 0000  // NOP
+@033 0000  // NOP
+@034 0000  // NOP
+@035 0000  // NOP
+@036 0000  // NOP
+@037 0000  // NOP
+@038 0000  // NOP
+@039 0000  // NOP
+@03A 0000  // NOP
+@03B 0000  // NOP
+@03C 0000  // NOP
+@03D 0000  // NOP
+@03E 0000  // NOP
+@03F 0000  // NOP
+@040 0000  // NOP
+@041 0000  // NOP
+@042 0000  // NOP
+@043 0000  // NOP
+@044 0000  // NOP
+@045 0000  // NOP
+@046 0000  // NOP
+@047 0000  // NOP
+@048 0000  // NOP
+@049 0000  // NOP
+@04A 0000  // NOP
+@04B 0000  // NOP
+@04C 0000  // NOP
+@04D 0000  // NOP
+@04E 0000  // NOP
+@04F 0000  // NOP
+
+// LOAD branch target (0x050) - SUCCESS PATH
+@050 C820  // LOAD R8, R2, R0  ; Load current LED value from 0xFFFF
+@051 8704  // ALI R7, 0x04   ; R7 = 0x0004 (LED2 bit for LOAD branch test)
+@052 2878  // OR R8, R7, R8  ; FIXED: OR with 0x0004 (LED2 bit)
+@053 D820  // STORE R8, R2, R0 ; Store back to LEDs (LED2=1, LOAD branch passed)
+
+// Jump to TEST 4 (BITW test)
+@054 8160  // ALI R1, 0x60   ; R1 = 0x0060 (Test 4 address)
+@055 4F10  // ADD R15, R1, R0 ; Branch to Test 4
+
+// Unused space before TEST 4
+@056 0000  // NOP
+@057 0000  // NOP
+@058 0000  // NOP
+@059 0000  // NOP
+@05A 0000  // NOP
+@05B 0000  // NOP
+@05C 0000  // NOP
+@05D 0000  // NOP
+@05E 0000  // NOP
+@05F 0000  // NOP
+
+// TEST 4: BITW (Bit Width) test with switches
+// Assumes switches are mechanically set to 0x8001
+@060 9BFF  // SUI R11, 0xFF  ; R11 = 0xFF00 (switches address upper)
+@061 8BFE  // ALI R11, 0xFE  ; R11 = 0xFFFE (switches address)
+
+// Load switches value (should be 0x8001)
+@062 CCB0  // LOAD R12, R11, R0 ; R12 = switches value (0x8001)
+
+// Set up mask 0xFFFF using SUI+ALI pattern
+@063 9DFF  // SUI R13, 0xFF  ; R13 = 0xFF00 (mask upper)
+@064 8DFF  // ALI R13, 0xFF  ; R13 = 0xFFFF (mask)
+
+// Do BITW operation: BITW R14, R12, R13
+// Expected: 0x8001 & 0xFFFF = 0x8001, bitwidth = 16 = 0x0010
+@065 BECD  // BITW R14, R12, R13 ; R14 = bitwidth of (R12 & R13)
+
+// Set up expected result 0x0010 using SUI+ALI pattern
+@066 9A00  // SUI R10, 0x00  ; R10 = 0x0000 (clean R10 first)
+@067 8A10  // ALI R10, 0x10  ; R10 = 0x0010 (expected result: 16)
+
+// Compare actual vs expected  
+@068 5EAE  // SUB R14, R10, R14 ; R14 = R10 - R14, should be 0 if correct
+
+// Branch if correct (BITW test passed)
+@069 EFE4  // CAIZ R15, R14, 0x4 ; If R14==0, branch to current_PC + 4 = 0x06D
+
+// BITW test failed - jump to local failure loop
+@06A 9100  // SUI R1, 0x00   ; Clean R1 first
+@06B 816C  // ALI R1, 0x6C   ; R1 = 0x006C (next instruction address)
+@06C 4F10  // ADD R15, R1, R0 ; Branch to itself (endless loop)
+
+// BITW test passed - set LED3 (SUCCESS PATH starts at 0x06D)
+@06D C820  // LOAD R8, R2, R0  ; Load current LED value from 0xFFFF
+@06E 9700  // SUI R7, 0x00   ; Clean R7 first
+@06F 8708  // ALI R7, 0x08   ; R7 = 0x0008 (LED3 bit for BITW test)
+@070 2878  // OR R8, R7, R8  ; FIXED: R8 = R7 | R8 (preserve existing LEDs)
+@071 D820  // STORE R8, R2, R0 ; Store back to LEDs (LED3=1, BITW test passed)
+
+// Jump to Test 5 (ADDI + CAIF test)
+@072 9700  // SUI R7, 0x00   ; Clean R7 first
+@073 8780  // ALI R7, 0x80   ; R7 = 0x0080 (Test 5 address)
+@074 4F70  // ADD R15, R7, R0 ; Branch to Test 5
+
+// Unused space before TEST 5
+@075 4000  // NOP
+@076 4000  // NOP
+@077 4000  // NOP
+@078 4000  // NOP
+@079 4000  // NOP
+@07A 4000  // NOP
+@07B 4000  // NOP
+@07C 4000  // NOP
+@07D 4000  // NOP
+@07E 4000  // NOP
+@07F 4000  // NOP
+
+// TEST 5: ADDI overflow + CAIF detection  
+// Tests: ADDI opcode (0xA) and CAIF opcode (0xF)
+// Strategy: Use ADDI to intentionally cause overflow, detect with CAIF
+// Expected result: LED4 lights up (LED pattern becomes 0x001F if all tests pass)
+
+@080 99FF  // SUI R9, 0xFF   ; R9 = 0xFF00
+@081 89FE  // ALI R9, 0xFE   ; R9 = 0xFFFE (close to 16-bit max)
+@082 A991  // ADDI R9, R9, 0x1 ; R9 = 0xFFFE + 1 = 0xFFFF (no overflow yet)
+@083 A991  // ADDI R9, R9, 0x1 ; R9 = 0xFFFF + 1 = 0x10000 (overflow bit 16 set)
+
+// Set up success indicator register (starts at 0)
+@084 9A00  // SUI R10, 0x00  ; Clean R10
+@085 8A00  // ALI R10, 0x00  ; R10 = 0x0000 (success indicator, initially 0)
+
+// Use CAIF to check overflow flag - if flag set, add 5 to R10
+@086 FA95  // CAIF R10, R9, 0x5 ; If R9[16] set, then R10 = R10 + 5 = 0x0005
+
+// Check if CAIF worked by comparing R10 to expected value
+@087 9B00  // SUI R11, 0x00  ; Clean R11
+@088 8B05  // ALI R11, 0x05  ; R11 = 0x0005 (expected value if overflow detected)
+@089 5BAB  // SUB R11, R10, R11 ; R11 = R10 - R11 (should be 0 if CAIF worked)
+
+// Branch on success (CAIZ: if R11==0, overflow was correctly detected)
+@08A EFB4  // CAIZ R15, R11, 0x4 ; If R11==0, branch to 0x08E (success path)
+
+// Test 5 failed - jump to local failure loop
+@08B 9100  // SUI R1, 0x00   ; Clean R1
+@08C 818D  // ALI R1, 0x8D   ; R1 = 0x008D (next instruction address)
+@08D 4F10  // ADD R15, R1, R0 ; Branch to itself (endless loop)
+
+// Test 5 passed - set LED4 (SUCCESS PATH starts at 0x08E)
+@08E C820  // LOAD R8, R2, R0  ; Load current LED value from 0xFFFF  
+@08F 9700  // SUI R7, 0x00   ; Clean R7
+@090 8710  // ALI R7, 0x10   ; R7 = 0x0010 (LED4 bit)
+@091 2878  // OR R8, R7, R8  ; Preserve existing LEDs (LED0+LED1+LED2+LED3+LED4)
+@092 D820  // STORE R8, R2, R0 ; Store back to LEDs (LED4=1, Test 5 passed)
+
+// Jump to Test 6 (NAND, XOR, SHL, SHR test)
+@093 9700  // SUI R7, 0x00   ; Clean R7
+@094 8796  // ALI R7, 0x96   ; R7 = 0x0096 (Test 6 address)
+@095 4F70  // ADD R15, R7, R0 ; Branch to Test 6
+
+// TEST 6: Remaining opcodes (NAND, XOR, SHL, SHR)
+// Strategy: Build a value using all 4 operations and check result
+// Uses switches value (0x8001) and transforms it to predictable result
+
+@096 9BFF  // SUI R11, 0xFF  ; R11 = 0xFF00 (switches address upper)
+@097 8BFE  // ALI R11, 0xFE  ; R11 = 0xFFFE (switches address)
+
+// Load switches value (should be 0x8001)
+@098 CCB0  // LOAD R12, R11, R0 ; R12 = switches value (0x8001)
+
+// Set up mask for NAND operation
+@099 9DFF  // SUI R13, 0xFF  ; R13 = 0xFF00
+@09A 8DFF  // ALI R13, 0xFF  ; R13 = 0xFFFF (mask for NAND)
+
+// Step 1: NAND operation
+// 0x8001 NAND 0xFFFF = ~(0x8001 & 0xFFFF) = ~0x8001 = 0x7FFE
+@09B 1CCD  // NAND R12, R12, R13 ; R12 = ~(R12 & R13) = 0x7FFE
+
+// Step 2: XOR with same value to get zero
+// 0x7FFE XOR 0x7FFE = 0x0000  
+@09C 3CCC  // XOR R12, R12, R12 ; R12 = R12 ^ R12 = 0x0000
+
+// Set up shift amount
+@09D 9A00  // SUI R10, 0x00  ; Clean R10
+@09E 8A04  // ALI R10, 0x04  ; R10 = 0x0004 (shift amount = 4)
+
+// Step 3: SHL operation (shifting zero still gives zero)
+// 0x0000 << 4 = 0x0000
+@09F 7CCA  // SHL R12, R12, R10 ; R12 = R12 << R10[3:0] = 0x0000
+
+// Set up different shift amount  
+@0A0 9A00  // SUI R10, 0x00  ; Clean R10
+@0A1 8A08  // ALI R10, 0x08  ; R10 = 0x0008 (shift amount = 8)
+
+// Step 4: SHR operation (shifting zero still gives zero)
+// 0x0000 >> 8 = 0x0000
+@0A2 6CCA  // SHR R12, R12, R10 ; R12 = R12 >> R10[3:0] = 0x0000
+
+// Check result: R12 should be 0x0000
+@0A3 9B00  // SUI R11, 0x00  ; Clean R11
+@0A4 8B00  // ALI R11, 0x00  ; R11 = 0x0000 (expected result)
+@0A5 5BCB  // SUB R11, R12, R11 ; R11 = R12 - R11 (should be 0 if all ops work)
+
+// Branch on success (all 4 remaining opcodes worked)
+@0A6 EFB4  // CAIZ R15, R11, 0x4 ; If R11==0, branch to 0x0AA (success path)
+
+// Test 6 failed - jump to local failure loop
+@0A7 9100  // SUI R1, 0x00   ; Clean R1
+@0A8 81A9  // ALI R1, 0xA9   ; R1 = 0x00A9 (next instruction address)
+@0A9 4F10  // ADD R15, R1, R0 ; Branch to itself (endless loop)
+
+// Test 6 passed - set LED5 (SUCCESS PATH starts at 0x0AA)
+@0AA C820  // LOAD R8, R2, R0  ; Load current LED value from 0xFFFF  
+@0AB 9700  // SUI R7, 0x00   ; Clean R7
+@0AC 8720  // ALI R7, 0x20   ; R7 = 0x0020 (LED5 bit)
+@0AD 2878  // OR R8, R7, R8  ; Preserve existing LEDs (LED0+LED1+LED2+LED3+LED4+LED5)
+@0AE D820  // STORE R8, R2, R0 ; Store back to LEDs (LED5=1, Test 6 passed)
+
+// Jump to Test 7 (R13 auto-decrement test)
+@0AF 9700  // SUI R7, 0x00   ; Clean R7
+@0B0 87B2  // ALI R7, 0xB2   ; R7 = 0x00B2 (Test 7 address)
+@0B1 4F70  // ADD R15, R7, R0 ; Branch to Test 7
+
+// TEST 7: R13 Auto-Decrement Test
+// Strategy: Set R13=1, read it (should get 1, R13 becomes 0), read again (should get 0, R13 becomes -1)
+
+@0B2 9D00  // SUI R13, 0x00  ; Clean R13 first
+@0B3 8D01  // ALI R13, 0x01  ; R13 = 0x0001 (initial value)
+
+// First read: should get 0x0001, then R13 auto-decrements to 0x0000
+@0B4 4AD0  // ADD R10, R13, R0 ; R10 = R13 (0x0001), R13 decrements to 0x0000
+
+// Check first read: R10 should be 0x0001 (non-zero)
+@0B5 9B00  // SUI R11, 0x00  ; Clean R11  
+@0B6 8B01  // ALI R11, 0x01  ; R11 = 0x0001 (expected first read value)
+@0B7 5BAB  // SUB R11, R10, R11 ; R11 = R10 - R11 (should be 0 if first read correct)
+@0B8 EFB5  // CAIZ R15, R11, 0x5 ; If R11==0, branch to second read test
+
+// First read failed - jump to local failure loop
+@0B9 9100  // SUI R1, 0x00   ; Clean R1
+@0BA 81BB  // ALI R1, 0xBB   ; R1 = 0x00BB (this instruction address)
+@0BB 4F10  // ADD R15, R1, R0 ; Branch to itself (endless loop)
+@0BC 0000  // NOP (padding)
+
+// Second read: should get 0x0000, then R13 auto-decrements to 0xFFFF
+@0BD 4CD0  // ADD R12, R13, R0 ; R12 = R13 (0x0000), R13 decrements to 0xFFFF
+
+// Check second read: R12 should be 0x0000
+@0BE 9B00  // SUI R11, 0x00  ; Clean R11
+@0BF 8B00  // ALI R11, 0x00  ; R11 = 0x0000 (expected second read value)
+@0C0 5BCB  // SUB R11, R12, R11 ; R11 = R12 - R11 (should be 0 if second read correct)
+@0C1 EFB4  // CAIZ R15, R11, 0x4 ; If R11==0, branch to success path
+
+// Second read failed - jump to local failure loop
+@0C2 9100  // SUI R1, 0x00   ; Clean R1
+@0C3 81C4  // ALI R1, 0xC4   ; R1 = 0x00C4 (next instruction address)
+@0C4 4F10  // ADD R15, R1, R0 ; Branch to itself (endless loop)
+
+// Test 7 passed - set LED6 (SUCCESS PATH starts here)
+@0C5 C820  // LOAD R8, R2, R0  ; Load current LED value from 0xFFFF  
+@0C6 9700  // SUI R7, 0x00   ; Clean R7
+@0C7 8740  // ALI R7, 0x40   ; R7 = 0x0040 (LED6 bit)
+@0C8 2878  // OR R8, R7, R8  ; Preserve existing LEDs (LED0+LED1+LED2+LED3+LED4+LED5+LED6)
+@0C9 D820  // STORE R8, R2, R0 ; Store back to LEDs (LED6=1, Test 7 passed)
+
+// Jump to Test 8 (R14 stack test)
+@0CA 9700  // SUI R7, 0x00   ; Clean R7 (R7 = 0x0000)
+@0CB 87CD  // ALI R7, 0xCD   ; R7 = 0x0000 + 0x00CD = 0x00CD
+@0CC 4F70  // ADD R15, R7, R0 ; Branch to Test 8
+
+// TEST 8: R14 Stack Test (LIFO functionality)
+// Strategy: Push 1,2,3 then pop 3 values while accumulating. Should get 3+2+1=6
+
+// Set up constants for push operations
+@0CD 9100  // SUI R1, 0x00   ; Clean R1
+@0CE 8101  // ALI R1, 0x01   ; R1 = 0x0001 (first value to push)
+@0CF 9200  // SUI R2, 0x00   ; Clean R2  
+@0D0 8202  // ALI R2, 0x02   ; R2 = 0x0002 (second value to push)
+@0D1 9300  // SUI R3, 0x00   ; Clean R3
+@0D2 8303  // ALI R3, 0x03   ; R3 = 0x0003 (third value to push)
+
+// Push phase: Push 1, then 2, then 3 (stack top will be 3)
+@0D3 4E01  // ADD R14, R0, R1 ; Push 1 onto R14 stack
+@0D4 4E02  // ADD R14, R0, R2 ; Push 2 onto R14 stack  
+@0D5 4E03  // ADD R14, R0, R3 ; Push 3 onto R14 stack (stack: bottom=1,2,top=3)
+
+// Initialize accumulator
+@0D6 9A00  // SUI R10, 0x00  ; Clean R10
+@0D7 8A00  // ALI R10, 0x00  ; R10 = 0x0000 (accumulator starts at 0)
+
+// Pop phase: Pop 3 values and accumulate (should get 3+2+1=6)
+@0D8 4AEA  // ADD R10, R14, R10 ; Pop 3, R10 = 0 + 3 = 3
+@0D9 4AEA  // ADD R10, R14, R10 ; Pop 2, R10 = 3 + 2 = 5
+@0DA 4AEA  // ADD R10, R14, R10 ; Pop 1, R10 = 5 + 1 = 6
+
+// Check if result equals 6
+@0DB 9B00  // SUI R11, 0x00  ; Clean R11
+@0DC 8B06  // ALI R11, 0x06  ; R11 = 0x0006 (expected result)  
+@0DD 5BAB  // SUB R11, R10, R11 ; R11 = R10 - R11 (should be 0 if correct)
+@0DE EFB4  // CAIZ R15, R11, 0x4 ; If R11==0, branch to 0x0E2 (success path)
+
+// Test 8 failed - jump to local failure loop
+@0DF 9100  // SUI R1, 0x00   ; Clean R1
+@0E0 81E1  // ALI R1, 0xE1   ; R1 = 0x00E1 (next instruction address)
+@0E1 4F10  // ADD R15, R1, R0 ; Branch to itself (endless loop)
+
+// Test 8 passed - set LED7 (SUCCESS PATH starts at 0x0E2)
+@0E2 92FF  // SUI R2, 0xFF   ; R2 = 0xFF00 (restore LED address upper)
+@0E3 82FF  // ALI R2, 0xFF   ; R2 = 0xFFFF (restore LED address)
+@0E4 C820  // LOAD R8, R2, R0  ; Load current LED value from 0xFFFF  
+@0E5 9700  // SUI R7, 0x00   ; Clean R7
+@0E6 8780  // ALI R7, 0x80   ; R7 = 0x0080 (LED7 bit)
+@0E7 2878  // OR R8, R7, R8  ; Preserve existing LEDs (LED0+LED1+LED2+LED3+LED4+LED5+LED6+LED7)
+@0E8 D820  // STORE R8, R2, R0 ; Store back to LEDs (LED7=1, Test 8 passed)
+
+// UART TX: Send "Hello World!" after all tests pass
+@0E9 92FF  // SUI R2, 0xFF   ; R2 = 0xFF00 (UART TX data register setup)
+@0EA 82E0  // ALI R2, 0xE0   ; R2 = 0xFFE0 (UART TX data register)
+
+@0EB 97FF  // SUI R7, 0xFF   ; R7 = 0xFF00 (UART TX status register setup)
+@0EC 87E2  // ALI R7, 0xE2   ; R7 = 0xFFE2 (UART TX status register)
+
+@0ED 9300  // SUI R3, 0x00   ; Clean R3
+@0EE 8310  // ALI R3, 0x10   ; R3 = 0x0010 (DMEM string address)
+
+@0EF 9400  // SUI R4, 0x00   ; Clean R4  
+@0F0 8400  // ALI R4, 0x00   ; R4 = 0x0000 (word counter starts at 0)
+
+// Outer loop: Load next word from DMEM string
+@0F1 C630  // LOAD R6, R3, R0 ; Load string word from DMEM
+
+// Inner loop: Wait for UART ready (TX FIFO empty)  
+@0F2 C870  // LOAD R8, R7, R0 ; Load TX status register
+@0F3 9A00  // SUI R10, 0x00  ; Clean R10
+@0F4 8A04  // ALI R10, 0x04  ; R10 = 0x0004 (TX FIFO empty bit mask)
+@0F5 08A8  // AND R8, R10, R8 ; R8 = status & 0x0004 (isolate FIFO empty bit)
+
+// If FIFO ready (R8!=0), skip backward branch; if not ready (R8==0), do backward branch
+@0F6 EF84  // CAIZ R15, R8, 0x4 ; If R8==0 (FIFO not ready), skip +4 to backward branch
+@0F7 9100  // SUI R1, 0x00   ; R1 = 0x0000 (clean upper bits)
+@0F8 81FD  // ALI R1, 0xFD   ; R1 = 0x00FD (send code address)  
+@0F9 4F10  // ADD R15, R1, R0 ; Skip to send code
+
+// Backward branch when FIFO not ready (target of CAIZ skip)
+@0FA 9100  // SUI R1, 0x00   ; R1 = 0x0000 (clean upper bits)
+@0FB 81F2  // ALI R1, 0xF2   ; R1 = 0x00F2 (wait loop address)
+@0FC 4F10  // ADD R15, R1, R0 ; Branch back to wait loop
+
+// Send code (FIFO is ready)
+@0FD D620  // STORE R6, R2, R0 ; Send word to UART TX data register
+@0FE A331  // ADDI R3, R3, 0x1 ; Increment DMEM address (next word)  
+@0FF A441  // ADDI R4, R4, 0x1 ; Increment word counter (R4 = R4 + 1)
+
+// Check if all words sent (R4 == 6?)
+@100 9500  // SUI R5, 0x00   ; Clean R5
+@101 8506  // ALI R5, 0x06   ; R5 = 0x0006 (target count)
+@102 5954  // SUB R9, R5, R4  ; R9 = R5 - R4 (0 when R4==6, i.e., all sent)
+
+// If all sent (R9==0), skip backward branch; if not done (R9!=0), do backward branch  
+@103 EF94  // CAIZ R15, R9, 0x4 ; If R9==0 (all sent), skip +4 to newline code (@107)
+@104 9100  // SUI R1, 0x00   ; R1 = 0x0000 (clean upper bits)
+@105 81F1  // ALI R1, 0xF1   ; R1 = 0x00F1 (outer loop address)
+@106 4F10  // ADD R15, R1, R0 ; Branch back to outer loop
+
+// NEWLINE TRANSMISSION: Send single '\n' character using TX_BYTE_REG
+@107 92FF  // SUI R2, 0xFF   ; R2 = 0xFF00 (TX_BYTE_REG setup)
+@108 82E4  // ALI R2, 0xE4   ; R2 = 0xFFE4 (TX_BYTE_REG address)
+@109 97FF  // SUI R7, 0xFF   ; R7 = 0xFF00 (TX status setup)  
+@10A 87E2  // ALI R7, 0xE2   ; R7 = 0xFFE2 (TX status register)
+
+// Wait for UART TX ready before sending newline (checking "not full" instead of "empty")
+@10B C870  // LOAD R8, R7, R0 ; Load TX status register
+@10C 9A00  // SUI R10, 0x00  ; Clean R10
+@10D 8A08  // ALI R10, 0x08  ; R10 = 0x0008 (TX FIFO full bit mask)
+@10E 08A8  // AND R8, R10, R8 ; R8 = status & 0x0008 (check if FIFO full)
+@10F EF84  // CAIZ R15, R8, 0x4 ; If not full (R8==0), skip +4 to send code
+// Backward branch when FIFO full (fall through when R8!=0)
+@110 9101  // SUI R1, 0x01   ; R1 = 0x0100
+@111 810B  // ALI R1, 0x0B   ; R1 = 0x010B (wait loop address)
+@112 4F10  // ADD R15, R1, R0 ; Branch back to wait loop
+
+// Send newline character (FIFO not full - target of CAIZ skip @113)
+@113 9600  // SUI R6, 0x00   ; Clean R6
+@114 860A  // ALI R6, 0x0A   ; R6 = 0x000A (newline character '\n')
+@115 D620  // STORE R6, R2, R0 ; Send newline to TX_BYTE_REG
+
+// UART RX: Setup for polling after newline sent
+@116 92FF  // SUI R2, 0xFF   ; R2 = 0xFF00 (RX data register setup)
+@117 82E1  // ALI R2, 0xE1   ; R2 = 0xFFE1 (RX data register)
+
+@118 97FF  // SUI R7, 0xFF   ; R7 = 0xFF00 (RX status register setup)
+@119 87E3  // ALI R7, 0xE3   ; R7 = 0xFFE3 (RX status register)
+
+// RX poll loop: wait for received data
+@11A C870  // LOAD R8, R7, R0 ; Load RX status register
+@11B 9A00  // SUI R10, 0x00  ; Clean R10
+@11C 8A02  // ALI R10, 0x02  ; R10 = 0x0002 (RX data available bit mask)
+@11D 08A8  // AND R8, R10, R8 ; R8 = status & 0x0002 (isolate data available bit)
+
+// If no data available (R8==0), continue polling; if data available (R8!=0), read it
+@11E EF84  // CAIZ R15, R8, 0x4 ; If R8==0 (no data), skip +4 to polling backward branch
+@11F 9101  // SUI R1, 0x01   ; R1 = 0x0100 (clean upper bits)
+@120 8125  // ALI R1, 0x25   ; R1 = 0x0125 (data available, read it)
+@121 4F10  // ADD R15, R1, R0 ; Skip to read data
+
+// Backward branch when no data available (target of CAIZ skip)
+@122 9101  // SUI R1, 0x01   ; R1 = 0x0100 (clean upper bits)
+@123 811A  // ALI R1, 0x1A   ; R1 = 0x011A (poll loop address)
+@124 4F10  // ADD R15, R1, R0 ; Branch back to poll loop
+
+// Data available, read RX word
+@125 C920  // LOAD R9, R2, R0 ; Read RX data word
+
+// Check lower byte for 'q' (0x71)
+@126 9A00  // SUI R10, 0x00  ; Clean R10
+@127 8AFF  // ALI R10, 0xFF  ; R10 = 0x00FF (lower byte mask)
+@128 0B9A  // AND R11, R9, R10 ; R11 = lower byte of received word
+@129 9C00  // SUI R12, 0x00  ; Clean R12
+@12A 8C71  // ALI R12, 0x71  ; R12 = 0x0071 ('q' ASCII)
+@12B 5DCB  // SUB R13, R12, R11 ; R13 = R12 - R11 (0 if lower byte is 'q')
+
+// If lower byte is 'q' (R13==0), skip backward branch; if not 'q' (R13!=0), do backward branch
+@12C EFD4  // CAIZ R15, R13, 0x4 ; If R13==0 (found 'q'), skip +4 to found_q jump
+@12D 9101  // SUI R1, 0x01   ; R1 = 0x0100 (clean upper bits)
+@12E 8133  // ALI R1, 0x33   ; R1 = 0x0133 (upper byte check address)
+@12F 4F10  // ADD R15, R1, R0 ; Continue to upper byte check
+
+// Found 'q' in lower byte, jump to found_q (target of CAIZ skip)
+@130 9101  // SUI R1, 0x01   ; R1 = 0x0100 (clean upper bits)
+@131 8147  // ALI R1, 0x47   ; R1 = 0x0147 (found_q address)
+@132 4F10  // ADD R15, R1, R0 ; Jump to found_q code
+
+// Check upper byte for 'q' (shift right 8 bits, then mask and compare)
+@133 9A00  // SUI R10, 0x00  ; Clean R10
+@134 8A08  // ALI R10, 0x08  ; R10 = 0x0008 (shift amount = 8 bits)
+@135 6B9A  // SHR R11, R9, R10 ; R11 = R9 >> 8 (upper byte now in lower position)
+@136 9A00  // SUI R10, 0x00  ; Clean R10
+@137 8AFF  // ALI R10, 0xFF  ; R10 = 0x00FF (byte mask)
+@138 0BBB  // AND R11, R11, R10 ; R11 = upper byte (masked)
+@139 9C00  // SUI R12, 0x00  ; Clean R12
+@13A 8C71  // ALI R12, 0x71  ; R12 = 0x0071 ('q' ASCII)
+@13B 5DCB  // SUB R13, R12, R11 ; R13 = R12 - R11 (0 if upper byte is 'q')
+
+// If upper byte is 'q' (R13==0), skip backward branch; if not 'q' (R13!=0), do backward branch
+@13C EFD4  // CAIZ R15, R13, 0x4 ; If R13==0 (found 'q'), skip +4 to found_q jump
+@13D 9101  // SUI R1, 0x01   ; R1 = 0x0100 (clean upper bits)
+@13E 811A  // ALI R1, 0x1A   ; R1 = 0x011A (back to poll loop)
+@13F 4F10  // ADD R15, R1, R0 ; Continue polling (no 'q' found)
+
+// Found 'q' in upper byte, jump to found_q (target of CAIZ skip)
+@140 9101  // SUI R1, 0x01   ; R1 = 0x0100 (clean upper bits)
+@141 8147  // ALI R1, 0x47   ; R1 = 0x0147 (found_q address)
+@142 4F10  // ADD R15, R1, R0 ; Jump to found_q code
+
+// Padding to align found_q code
+@143 0000  // NOP
+@144 0000  // NOP
+@145 0000  // NOP
+@146 0000  // NOP
+
+// Found 'q': turn on remaining LEDs (upper 8 bits) and halt
+@147 92FF  // SUI R2, 0xFF   ; R2 = 0xFF00 (LED address setup)
+@148 82FF  // ALI R2, 0xFF   ; R2 = 0xFFFF (LED address)
+@149 C820  // LOAD R8, R2, R0 ; Load current LED state (should be 0x00FF)
+@14A 97FF  // SUI R7, 0xFF   ; R7 = 0xFF00 (upper 8 LEDs mask)
+@14B 8700  // ALI R7, 0x00   ; R7 = 0xFF00 (remaining LEDs - bits 8-15)
+@14C 2878  // OR R8, R7, R8  ; R8 = 0xFF00 | 0x00FF = 0xFFFF (all LEDs on)
+@14D D820  // STORE R8, R2, R0 ; Store back to LEDs (all 16 LEDs now on)
+
+// Final endless loop after 'q' received and LEDs updated
+@14E 9101  // SUI R1, 0x01   ; R1 = 0x0100
+@14F 814E  // ALI R1, 0x4E   ; R1 = 0x014E (address of SUI instruction)
+@150 4F10  // ADD R15, R1, R0 ; Branch to 0x014E (endless loop)
+
+// Test Verification:
+// Expected LED patterns:
+// 0x00FF (LED0+LED1+LED2+LED3+LED4+LED5+LED6+LED7): All 8 tests passed
+// After tests: Send "Hello World!" (word mode, waits for empty) + newline (single byte mode, waits for not-full), then wait for 'q' character
+// 0xFFFF (all LEDs): 'q' character received successfully via UART
+
+
+// ISR Placeholder:
+@3FE0 0000 
+@3FE1 0000
+@3FE2 0000
+@3FE3 9F00

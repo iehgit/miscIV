@@ -1,0 +1,82 @@
+16-BIT MISC PROCESSOR ARCHITECTURE REFERENCE
+============================================
+
+ARCHITECTURE FUNDAMENTALS:
+This is a 16-bit MISC (Minimal Instruction Set Computer) with Harvard architecture 
+featuring separate instruction and data memories, word-addressed organization, 
+memory-mapped I/O, and a 3-stage pipeline with specialized register behaviors.
+
+INSTRUCTION SET (16 OPCODES):
+=============================
+
+HEX | MNEMONIC | FULL NAME                    | FORMAT
+----|----------|------------------------------|--------------------
+0x0 | AND      | Bitwise AND                  | AND   rd, rs1, rs2
+0x1 | NAND     | Bitwise NAND                 | NAND  rd, rs1, rs2  
+0x2 | OR       | Bitwise OR                   | OR    rd, rs1, rs2
+0x3 | XOR      | Bitwise XOR                  | XOR   rd, rs1, rs2
+0x4 | ADD      | Addition                     | ADD   rd, rs1, rs2
+0x5 | SUB      | Subtraction                  | SUB   rd, rs1, rs2
+0x6 | SHR      | Shift Right                  | SHR   rd, rs1, rs2
+0x7 | SHL      | Shift Left                   | SHL   rd, rs1, rs2
+0x8 | ALI      | Add Lower Immediate          | ALI   rd, imm8
+0x9 | SUI      | Set Upper Immediate          | SUI   rd, imm8
+0xA | ADDI     | Add Immediate                | ADDI  rd, rs1, imm4
+0xB | BITW     | Bit Width                    | BITW  rd, rs1, rs2
+0xC | LOAD     | Load from Memory             | LOAD  rd, rs1, rs2
+0xD | STORE    | Store to Memory              | STORE rd, rs1, rs2
+0xE | CAIZ     | Conditional Add If Zero      | CAIZ  rd, rs1, imm4
+0xF | CAIF     | Conditional Add If Flag      | CAIF  rd, rs1, imm4
+
+NOTE: SHR performs logical shift if flag=0, arithmetic shift if flag=1.
+
+INSTRUCTION FORMAT:
+  [15:12] = opcode (4 bits)
+  [11:8]  = rd (destination register, 4 bits)
+  [7:4]   = rs1 (source register 1, 4 bits)  
+  [3:0]   = rs2 (source register 2, 4 bits) OR imm4 (4-bit immediate)
+  [7:0]   = imm8 (8-bit immediate for ALI/SUI)
+
+PSEUDO-OPERATIONS:
+  NOP  = 0x0000 = AND R0, R0, R0 (no operation)
+  IRET = 0x9F00 = SUI R15, 0x00 (ISR exit)
+
+REGISTER FILE (16 REGISTERS):
+==============================
+
+REG | QUIRKS AND SPECIAL BEHAVIORS                           | ISR SHADOW
+----|--------------------------------------------------------|-----------
+R0  | General purpose register                               | YES
+R1  | General purpose register                               | YES
+R2  | General purpose register                               | YES
+R3  | General purpose register                               | YES
+R4  | General purpose register                               | YES
+R5  | General purpose register                               | YES
+R6  | General purpose register                               | YES
+R7  | General purpose register                               | YES
+R8  | General purpose register                               | NO
+R9  | General purpose register                               | NO
+R10 | General purpose register                               | NO
+R11 | General purpose register                               | NO
+R12 | Initialized to 1 on reset (others initialize to 0)     | NO
+R13 | Auto-decrements when used as source operand            | NO
+R14 | LIFO stack: push on write, pop on read, 8-level deep   | NO
+R15 | Program counter: reads return current PC+flag,         | NO
+    | writes trigger branches with 2-cycle delay             |
+
+NOTES:
+- All registers R0-R15 are 17 bits wide (16 data + 1 flag bit)
+- R15 reads return {flag_bit, current_PC} but triggers branches when written
+- Branches are performed by writing target address to R15
+- R13 auto-decrement occurs for ANY source usage (rs1, rs2, or STORE rd)
+- R14 stack operations: write=push, read=pop, simultaneous=modify top
+- Flag bits capture overflow from arithmetic operations and control shift behavior
+
+INTERRUPT SYSTEM:
+=================
+
+INPUTS: Two interrupt request lines with different priorities and vectors
+- IRQ1 (high priority) wins simultaneous requests  
+- IRQ2 (low priority)  serviced only if IRQ1 idle
+
+CONTEXT: R0-R7 have shadow registers for automatic save/restore during ISR
