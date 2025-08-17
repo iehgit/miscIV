@@ -28,7 +28,11 @@ module io_controller (
     output logic        audio_mclk,      // Master clock to Pmod
     output logic        audio_lrck,      // L/R word select
     output logic        audio_sclk,      // Serial bit clock
-    output logic        audio_sdin       // Serial data out to DAC
+    output logic        audio_sdin,      // Serial data out to DAC
+    
+    // Quad SPI Flash Interface
+    output logic        QspiCSn,         // Chip select for SPI flash
+    inout  logic [3:0]  QspiDB           // Quad SPI data lines
 );
 
     // This I/O controller has intentional hazards for timing optimization:
@@ -67,6 +71,8 @@ module io_controller (
     logic        vga_device_select;   // VGA device selected
     logic [15:0] audio_rdata;         // Read data from Audio controller
     logic        audio_device_select; // Audio device selected
+    logic [15:0] rom_rdata;           // Read data from ROM controller
+    logic        rom_device_select;   // ROM device selected
     
     // Stage 2: Address field extraction and pipelining
     // Extract device ID and offset
@@ -96,6 +102,7 @@ module io_controller (
     assign simple_io_device_select = (device_id_reg == SIMPLE_IO_DEVICE);
     assign vga_device_select = (device_id_reg == VGA_DEVICE);
     assign audio_device_select = (device_id_reg == AUDIO_DEVICE);
+    assign rom_device_select = (device_id_reg == ROM_DEVICE);
     
     // Stage 3: Read data multiplexing using device ID
     always_comb begin
@@ -114,8 +121,8 @@ module io_controller (
                     io_rdata = vga_rdata;
                 end
                 ROM_DEVICE: begin
-                    // ROM device reads (Device 2044) - reserved for future implementation
-                    io_rdata = 16'h1234;  // Placeholder value
+                    // ROM device reads (Device 2044) - handled by ROM controller
+                    io_rdata = rom_rdata;
                 end
                 AUDIO_DEVICE: begin
                     // Audio device reads (Device 2043) - handled by Audio controller
@@ -205,6 +212,24 @@ module io_controller (
         .audio_lrck(audio_lrck),
         .audio_sclk(audio_sclk),
         .audio_sdin(audio_sdin)
+    );
+    
+    // ROM Controller instantiation (Quad SPI Flash)
+    rom_controller rom_controller (
+        .clk(clk),
+        .reset(reset),
+        
+        // I/O Controller Interface
+        .device_select(rom_device_select),
+        .register_offset(register_offset_reg),
+        .read_req(read_req_reg),
+        .write_req(write_req_reg),
+        .wdata(wdata_reg),
+        .rdata(rom_rdata),
+        
+        // Quad SPI Flash Interface
+        .QspiCSn(QspiCSn),
+        .QspiDB(QspiDB)
     );
 
 endmodule

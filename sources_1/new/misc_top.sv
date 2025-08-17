@@ -43,8 +43,12 @@ module misc_top (
     output logic        JB4,          // Audio SDIN (Serial data to DAC) - Top row DAC
     output logic        JB7,          // Audio MCLK (Master clock) - Bottom row ADC
     output logic        JB8,          // Audio LRCK (L/R word select) - Bottom row ADC
-    output logic        JB9           // Audio SCLK (Serial bit clock) - Bottom row ADC
+    output logic        JB9,          // Audio SCLK (Serial bit clock) - Bottom row ADC
     // JB10 is SDOUT from ADC, not needed for output-only operation
+    
+    // Quad SPI Flash Interface
+    output logic        QspiCSn,      // Chip select for SPI flash
+    inout  logic [3:0]  QspiDB        // Quad SPI data lines
 );
 
     // Speed control signals
@@ -489,7 +493,7 @@ module misc_top (
         .rdata(cpu_dmem_rdata)
     );
     
-    // I/O Controller (handles all memory-mapped I/O devices)
+    // I/O Controller (handles all memory-mapped I/O devices including ROM)
     io_controller io_controller (
         .clk(clk),
         .clk_en(cpu_clk_en),             // Same clock enable as core
@@ -521,7 +525,11 @@ module misc_top (
         .audio_mclk(JB1),                // Master clock to Pmod (top row DAC)
         .audio_lrck(JB2),                // L/R word select (top row DAC)
         .audio_sclk(JB3),                // Serial bit clock (top row DAC)
-        .audio_sdin(JB4)                 // Serial data to DAC (top row)
+        .audio_sdin(JB4),                // Serial data to DAC (top row)
+        
+        // Quad SPI Flash Interface
+        .QspiCSn(QspiCSn),               // Chip select for SPI flash
+        .QspiDB(QspiDB)                  // Quad SPI data lines
     );
     
     // Connect same clock signals to bottom row for ADC
