@@ -138,6 +138,17 @@ All I/O devices are accessed via memory-mapped registers at addresses 0x8000-0xF
 
 **NOTES:** 64K words (128KB) stored in SPI flash at 2MB offset. Quad-SPI interface at 50MHz. Write to ROM_ADDR triggers read, poll ROM_STATUS[0] for completion (~880ns).
 
+### KEYBOARD (0xFFA0-0xFFAF)
+
+| ADDRESS | NAME            | R/W | DESCRIPTION                         |
+|---------|-----------------|-----|-------------------------------------|
+| 0xFFA0  | KBD_ASCII       | R   | ASCII character (unimplemented)    |
+| 0xFFA1  | KBD_RAW         | R   | Raw scan code from FIFO            |
+| 0xFFA2  | KBD_STATUS      | R   | [2]=Overflow, [1]=Full, [0]=Available |
+| 0xFFA3  | KBD_CONTROL     | W   | [0]=Clear FIFO                     |
+
+**NOTES:** PS/2 keyboard interface. 8-entry FIFO stores raw scan codes (Set 2). Captures all codes including make (press), break (F0 prefix = release), and extended (E0 prefix). Reading KBD_RAW auto-advances FIFO. ASCII conversion planned for future enhancement.
+
 ### AUDIO (0xFFB0-0xFFBF)
 
 | ADDRESS | NAME            | R/W | DESCRIPTION                         |
