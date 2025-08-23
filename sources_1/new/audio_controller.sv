@@ -455,7 +455,8 @@ module audio_controller (
         I2S_TRANSMIT
     } i2s_state_t;
     
-    i2s_state_t i2s_state;
+    (* fsm_safe_state = "default_state" *)
+    i2s_state_t i2s_state = I2S_WAIT_LRCK;
     logic [15:0] tx_shift_reg;     // Shift register for I2S data
     logic [4:0]  bit_counter;      // Count bits 0-15
     logic        first_bit_sent;   // Track if first bit after LRCK sent
