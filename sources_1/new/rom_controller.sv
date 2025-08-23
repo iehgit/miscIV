@@ -58,7 +58,8 @@ module rom_controller (
     // SPI interface signals
     logic        cs_n;                // Internal chip select
     logic [3:0]  dq_out;              // Data output to flash
-    logic [3:0]  dq_in;               // Data input from flash
+    logic [3:0]  dq_in;               // Data input from flash (from IOBUFs)
+    logic [3:0]  dq_in_sampled;       // Sampled input data
     logic        dq0_output_en;       // Output enable for DQ0
     
     // State machine counters and control
@@ -106,17 +107,54 @@ module rom_controller (
     assign spi_clk_en = clk_divider;
     assign spi_clk_out = (state != IDLE && state != DONE && state != ERROR) ? clk_divider : 1'b0;
     
-    // Tri-state I/O management
-    assign QspiDB[0] = dq0_output_en ? dq_out[0] : 1'bZ;
-    assign QspiDB[3:1] = 3'bZZZ;  // Always input for Quad Read mode
+    // Tri-state I/O management - using explicit IOBUFs for all pins for consistency
     assign QspiCSn = cs_n;
+    
+    // Explicit IOBUF primitives for all SPI data pins
+    IOBUF iobuf_dq0 (
+        .O(dq_in[0]),           // Buffer output (from pad)
+        .IO(QspiDB[0]),         // Buffer inout port (connect to top-level port)
+        .I(dq_out[0]),          // Buffer input (data to drive out)
+        .T(~dq0_output_en)      // 3-state control (1=input, 0=output)
+    );
+    
+    IOBUF iobuf_dq1 (
+        .O(dq_in[1]),           // Buffer output (from pad)
+        .IO(QspiDB[1]),         // Buffer inout port (connect to top-level port)
+        .I(1'b0),               // Buffer input (unused - always 0)
+        .T(1'b1)                // 3-state control (always 1 = input mode)
+    );
+    
+    IOBUF iobuf_dq2 (
+        .O(dq_in[2]),           // Buffer output (from pad)
+        .IO(QspiDB[2]),         // Buffer inout port (connect to top-level port)
+        .I(1'b0),               // Buffer input (unused - always 0)
+        .T(1'b1)                // 3-state control (always 1 = input mode)
+    );
+    
+    IOBUF iobuf_dq3 (
+        .O(dq_in[3]),           // Buffer output (from pad)
+        .IO(QspiDB[3]),         // Buffer inout port (connect to top-level port)
+        .I(1'b0),               // Buffer input (unused - always 0)
+        .T(1'b1)                // 3-state control (always 1 = input mode)
+    );
     
     // Input sampling - sample just before state transition for stable data
     always_ff @(posedge clk) begin
         // Sample on the cycle before spi_clk_en when data is stable
         // This is when clk_divider is low (SPI clock is low, data stable)
-        if (!clk_divider && (state >= READ_NIBBLE0 && state <= READ_NIBBLE3)) begin
-            dq_in <= QspiDB;
+        if (!clk_divider) begin
+            // Sample one state BEFORE we need the data:
+            // - During DUMMY_WAIT: sample what will be used in READ_NIBBLE0
+            // - During READ_NIBBLE0: sample what will be used in READ_NIBBLE1
+            // - During READ_NIBBLE1: sample what will be used in READ_NIBBLE2
+            // - During READ_NIBBLE2: sample what will be used in READ_NIBBLE3
+            if ((state == DUMMY_WAIT && dummy_counter == 3'd7) ||  // Last dummy cycle
+                 state == READ_NIBBLE0 ||
+                 state == READ_NIBBLE1 ||
+                 state == READ_NIBBLE2) begin
+                dq_in_sampled <= dq_in;  // Sample data from IOBUF outputs
+            end
         end
     end
     
@@ -304,25 +342,25 @@ module rom_controller (
                 
                 READ_NIBBLE0: begin
                     // Read bits [3:0] of the word (first nibble of low byte)
-                    rom_data_reg[3:0] <= dq_in;
+                    rom_data_reg[3:0] <= dq_in_sampled;
                     timeout_counter <= timeout_counter + 1;
                 end
                 
                 READ_NIBBLE1: begin
                     // Read bits [7:4] of the word (second nibble of low byte)
-                    rom_data_reg[7:4] <= dq_in;
+                    rom_data_reg[7:4] <= dq_in_sampled;
                     timeout_counter <= timeout_counter + 1;
                 end
                 
                 READ_NIBBLE2: begin
                     // Read bits [11:8] of the word (first nibble of high byte)
-                    rom_data_reg[11:8] <= dq_in;
+                    rom_data_reg[11:8] <= dq_in_sampled;
                     timeout_counter <= timeout_counter + 1;
                 end
                 
                 READ_NIBBLE3: begin
                     // Read bits [15:12] of the word (second nibble of high byte)
-                    rom_data_reg[15:12] <= dq_in;
+                    rom_data_reg[15:12] <= dq_in_sampled;
                     timeout_counter <= timeout_counter + 1;
                 end
                 
