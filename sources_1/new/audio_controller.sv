@@ -374,6 +374,7 @@ module audio_controller (
     
     // Generate sample tick at start of each LRCK cycle (48kHz)
     logic lrck_prev;
+    logic sample_tick;
     always_ff @(posedge clk_audio) begin
         lrck_prev <= lrck_int;
     end
@@ -387,8 +388,9 @@ module audio_controller (
     
     // Calculate phase increment for sawtooth: (freq * 2^32) / 48000
     // Approximation: freq * 89478 (~ 2^32 / 48000)
-    always_comb begin
-        saw_phase_increment = saw_freq_audio * 32'd89478;
+    // Pipelined to fix DSP48 warning
+    always_ff @(posedge clk_audio) begin
+        saw_phase_increment <= saw_freq_audio * 32'd89478;
     end
     
     // Phase accumulator and sawtooth generation
@@ -410,8 +412,9 @@ module audio_controller (
     
     // Calculate phase increment for square: (freq * 2^32) / 48000
     // Approximation: freq * 89478 (~ 2^32 / 48000)
-    always_comb begin
-        square_phase_increment = square_freq_audio * 32'd89478;
+    // Pipelined to fix DSP48 warning
+    always_ff @(posedge clk_audio) begin
+        square_phase_increment <= square_freq_audio * 32'd89478;
     end
     
     // Phase accumulator and square wave generation
