@@ -17,22 +17,28 @@ module rom_controller (
 
     // Register offsets
     localparam logic [3:0] REG_ROM_ADDR   = 4'h0;  // Write triggers read
-    localparam logic [3:0] REG_ROM_DATA   = 4'h1;  // Read data
-    localparam logic [3:0] REG_ROM_STATUS = 4'h2;  // Status (bit 0 = valid)
+    localparam logic [3:0] REG_ROM_BANK   = 4'h1;  // Bank selector [3:0]
+    localparam logic [3:0] REG_ROM_DATA   = 4'h2;  // Read data
+    localparam logic [3:0] REG_ROM_STATUS = 4'h3;  // Status (bit 0 = valid)
     
     // SPI Commands
-    localparam logic [7:0] CMD_FAST_READ_QUAD = 8'h6B;  // Fast Read Quad Output
+    localparam logic [7:0] CMD_FAST_READ_QUAD_IO = 8'hEB;  // Fast Read Quad I/O
     
-    // Timeout value (64 cycles @ 50MHz = 1.28us)
-    localparam logic [5:0] TIMEOUT_CYCLES = 6'd63;
+    // Timeout value (32 cycles @ 50MHz = 0.64us)
+    localparam logic [4:0] TIMEOUT_CYCLES = 5'd31;
     
     // State machine states
-    typedef enum logic [3:0] {
+    typedef enum logic [4:0] {
         IDLE,
         SEND_CMD,
+        SEND_ADDR5,
+        SEND_ADDR4,
+        SEND_ADDR3,
         SEND_ADDR2,
         SEND_ADDR1,
         SEND_ADDR0,
+        SEND_MODE1,
+        SEND_MODE0,
         DUMMY_WAIT,
         READ_NIBBLE0,
         READ_NIBBLE1,
@@ -46,6 +52,7 @@ module rom_controller (
     
     // Registers
     logic [15:0] rom_addr_reg;        // Address register
+    logic [3:0]  rom_bank_reg;        // Bank selector register (16 banks of 128KB each)
     logic [15:0] rom_data_reg;        // Data register
     logic        data_valid;          // Data valid flag
     logic        read_triggered;      // Read operation triggered
@@ -60,16 +67,16 @@ module rom_controller (
     logic [3:0]  dq_out;              // Data output to flash
     logic [3:0]  dq_in;               // Data input from flash (from IOBUFs)
     logic [3:0]  dq_in_sampled;       // Sampled input data
-    logic        dq0_output_en;       // Output enable for DQ0
+    logic [3:0]  dq_output_en;        // Output enables for each DQ pin
     
     // State machine counters and control
     logic [2:0]  bit_counter;         // Bit counter for serial transmission
-    logic [2:0]  dummy_counter;       // Counter for dummy cycles
-    logic [5:0]  timeout_counter;     // Timeout detection
+    logic [1:0]  dummy_counter;       // Counter for dummy cycles (reduced to 4)
+    logic [4:0]  timeout_counter;     // Timeout detection
     
     // Data assembly
     logic [7:0]  cmd_shift_reg;       // Command shift register
-    logic [23:0] addr_shift_reg;      // Address shift register
+    logic [23:0] addr_value;          // Full address to send
     
     // STARTUPE2 primitive for SPI clock routing
     // Dummy signals to suppress synthesis warnings about unconnected outputs
@@ -115,28 +122,28 @@ module rom_controller (
         .O(dq_in[0]),           // Buffer output (from pad)
         .IO(QspiDB[0]),         // Buffer inout port (connect to top-level port)
         .I(dq_out[0]),          // Buffer input (data to drive out)
-        .T(~dq0_output_en)      // 3-state control (1=input, 0=output)
+        .T(~dq_output_en[0])    // 3-state control (1=input, 0=output)
     );
     
     IOBUF iobuf_dq1 (
         .O(dq_in[1]),           // Buffer output (from pad)
         .IO(QspiDB[1]),         // Buffer inout port (connect to top-level port)
-        .I(1'b0),               // Buffer input (unused - always 0)
-        .T(1'b1)                // 3-state control (always 1 = input mode)
+        .I(dq_out[1]),          // Buffer input (data to drive out)
+        .T(~dq_output_en[1])    // 3-state control (1=input, 0=output)
     );
     
     IOBUF iobuf_dq2 (
         .O(dq_in[2]),           // Buffer output (from pad)
         .IO(QspiDB[2]),         // Buffer inout port (connect to top-level port)
-        .I(1'b0),               // Buffer input (unused - always 0)
-        .T(1'b1)                // 3-state control (always 1 = input mode)
+        .I(dq_out[2]),          // Buffer input (data to drive out)
+        .T(~dq_output_en[2])    // 3-state control (1=input, 0=output)
     );
     
     IOBUF iobuf_dq3 (
         .O(dq_in[3]),           // Buffer output (from pad)
         .IO(QspiDB[3]),         // Buffer inout port (connect to top-level port)
-        .I(1'b0),               // Buffer input (unused - always 0)
-        .T(1'b1)                // 3-state control (always 1 = input mode)
+        .I(dq_out[3]),          // Buffer input (data to drive out)
+        .T(~dq_output_en[3])    // 3-state control (1=input, 0=output)
     );
     
     // Input sampling - sample just before state transition for stable data
@@ -149,7 +156,7 @@ module rom_controller (
             // - During READ_NIBBLE0: sample what will be used in READ_NIBBLE1
             // - During READ_NIBBLE1: sample what will be used in READ_NIBBLE2
             // - During READ_NIBBLE2: sample what will be used in READ_NIBBLE3
-            if ((state == DUMMY_WAIT && dummy_counter == 3'd7) ||  // Last dummy cycle
+            if ((state == DUMMY_WAIT && dummy_counter == 2'd3) ||  // Last dummy cycle
                  state == READ_NIBBLE0 ||
                  state == READ_NIBBLE1 ||
                  state == READ_NIBBLE2) begin
@@ -162,10 +169,17 @@ module rom_controller (
     always_ff @(posedge clk) begin
         if (reset) begin
             rom_addr_reg <= 16'h0000;
+            rom_bank_reg <= 4'h0;
             read_triggered <= 1'b0;
         end else begin
             read_triggered <= 1'b0;  // Default: clear trigger
             
+            // Bank register write (does NOT trigger read)
+            if (device_select && write_req && register_offset == REG_ROM_BANK) begin
+                rom_bank_reg <= wdata[3:0];  // Only use lower 4 bits for 16 banks
+            end
+            
+            // Address register write (triggers read)
             if (device_select && write_req && register_offset == REG_ROM_ADDR) begin
                 rom_addr_reg <= wdata;
                 read_triggered <= 1'b1;  // Trigger read operation
@@ -195,49 +209,29 @@ module rom_controller (
             
             SEND_CMD: begin
                 if (bit_counter == 3'd7) begin
-                    next_state = SEND_ADDR2;
+                    next_state = SEND_ADDR5;
                 end
             end
             
-            SEND_ADDR2: begin
-                if (bit_counter == 3'd7) begin
-                    next_state = SEND_ADDR1;
-                end
-            end
-            
-            SEND_ADDR1: begin
-                if (bit_counter == 3'd7) begin
-                    next_state = SEND_ADDR0;
-                end
-            end
-            
-            SEND_ADDR0: begin
-                if (bit_counter == 3'd7) begin
-                    next_state = DUMMY_WAIT;
-                end
-            end
+            SEND_ADDR5: next_state = SEND_ADDR4;
+            SEND_ADDR4: next_state = SEND_ADDR3;
+            SEND_ADDR3: next_state = SEND_ADDR2;
+            SEND_ADDR2: next_state = SEND_ADDR1;
+            SEND_ADDR1: next_state = SEND_ADDR0;
+            SEND_ADDR0: next_state = SEND_MODE1;
+            SEND_MODE1: next_state = SEND_MODE0;
+            SEND_MODE0: next_state = DUMMY_WAIT;
             
             DUMMY_WAIT: begin
-                if (dummy_counter == 3'd7) begin
+                if (dummy_counter == 2'd3) begin
                     next_state = READ_NIBBLE0;
                 end
             end
             
-            READ_NIBBLE0: begin
-                next_state = READ_NIBBLE1;
-            end
-            
-            READ_NIBBLE1: begin
-                next_state = READ_NIBBLE2;
-            end
-            
-            READ_NIBBLE2: begin
-                next_state = READ_NIBBLE3;
-            end
-            
-            READ_NIBBLE3: begin
-                next_state = DONE;
-            end
+            READ_NIBBLE0: next_state = READ_NIBBLE1;
+            READ_NIBBLE1: next_state = READ_NIBBLE2;
+            READ_NIBBLE2: next_state = READ_NIBBLE3;
+            READ_NIBBLE3: next_state = DONE;
             
             DONE: begin
                 next_state = IDLE;
@@ -267,34 +261,35 @@ module rom_controller (
         if (reset) begin
             cs_n <= 1'b1;              // Chip select inactive
             dq_out <= 4'h0;
-            dq0_output_en <= 1'b0;
+            dq_output_en <= 4'h0;
             bit_counter <= 3'd0;
-            dummy_counter <= 3'd0;
-            timeout_counter <= 6'd0;
+            dummy_counter <= 2'd0;
+            timeout_counter <= 5'd0;
             cmd_shift_reg <= 8'h00;
-            addr_shift_reg <= 24'h000000;
+            addr_value <= 24'h000000;
             rom_data_reg <= 16'h0000;
             data_valid <= 1'b0;
         end else if (spi_clk_en) begin
             unique case (state)
                 IDLE: begin
                     cs_n <= 1'b1;
-                    dq0_output_en <= 1'b0;
+                    dq_output_en <= 4'h0;
                     bit_counter <= 3'd0;
-                    dummy_counter <= 3'd0;
-                    timeout_counter <= 6'd0;
+                    dummy_counter <= 2'd0;
+                    timeout_counter <= 5'd0;
                     data_valid <= 1'b0;
                     
                     if (read_triggered) begin
                         // Prepare for new transaction
                         cs_n <= 1'b0;  // Assert chip select
-                        cmd_shift_reg <= CMD_FAST_READ_QUAD;
-                        // Direct bit concatenation for flash address:
-                        // [23:17] = 7'b0000001 (2MB offset = 0x200000)
+                        cmd_shift_reg <= CMD_FAST_READ_QUAD_IO;
+                        // Calculate flash address based on bank:
+                        // [23:17] = 0x10 + bank (0x10 = 2MB base / 128KB)
+                        // Bank 0: 0x10 (0x200000), Bank 1: 0x11 (0x220000), etc.
                         // [16:1]  = rom_addr_reg (16-bit word address)
                         // [0]     = 1'b0 (even byte address for word alignment)
-                        addr_shift_reg <= {7'b0000001, rom_addr_reg, 1'b0};
-                        dq0_output_en <= 1'b1;  // Enable output for command
+                        addr_value <= {(7'h10 + {3'b000, rom_bank_reg}), rom_addr_reg, 1'b0};
+                        dq_output_en <= 4'h1;  // Enable only DQ0 for command
                     end
                 end
                 
@@ -304,38 +299,57 @@ module rom_controller (
                     cmd_shift_reg <= {cmd_shift_reg[6:0], 1'b0};
                     bit_counter <= bit_counter + 1;
                     timeout_counter <= timeout_counter + 1;
+                    
+                    if (bit_counter == 3'd7) begin
+                        dq_output_en <= 4'hF;  // Enable all DQ pins for address phase
+                    end
+                end
+                
+                // Send address nibbles in quad mode (6 cycles total)
+                SEND_ADDR5: begin
+                    dq_out <= addr_value[23:20];  // Send highest nibble
+                    timeout_counter <= timeout_counter + 1;
+                end
+                
+                SEND_ADDR4: begin
+                    dq_out <= addr_value[19:16];
+                    timeout_counter <= timeout_counter + 1;
+                end
+                
+                SEND_ADDR3: begin
+                    dq_out <= addr_value[15:12];
+                    timeout_counter <= timeout_counter + 1;
                 end
                 
                 SEND_ADDR2: begin
-                    // Send address[23:16] on DQ0
-                    dq_out[0] <= addr_shift_reg[23];
-                    addr_shift_reg <= {addr_shift_reg[22:0], 1'b0};
-                    bit_counter <= bit_counter + 1;
+                    dq_out <= addr_value[11:8];
                     timeout_counter <= timeout_counter + 1;
                 end
                 
                 SEND_ADDR1: begin
-                    // Send address[15:8] on DQ0
-                    dq_out[0] <= addr_shift_reg[23];
-                    addr_shift_reg <= {addr_shift_reg[22:0], 1'b0};
-                    bit_counter <= bit_counter + 1;
+                    dq_out <= addr_value[7:4];
                     timeout_counter <= timeout_counter + 1;
                 end
                 
                 SEND_ADDR0: begin
-                    // Send address[7:0] on DQ0
-                    dq_out[0] <= addr_shift_reg[23];
-                    addr_shift_reg <= {addr_shift_reg[22:0], 1'b0};
-                    bit_counter <= bit_counter + 1;
+                    dq_out <= addr_value[3:0];  // Send lowest nibble
                     timeout_counter <= timeout_counter + 1;
-                    
-                    if (bit_counter == 3'd7) begin
-                        dq0_output_en <= 1'b0;  // Switch DQ0 to input for data phase
-                    end
+                end
+                
+                // Send mode bits (0xF0 for continuous quad mode)
+                SEND_MODE1: begin
+                    dq_out <= 4'hF;  // Upper nibble of mode
+                    timeout_counter <= timeout_counter + 1;
+                end
+                
+                SEND_MODE0: begin
+                    dq_out <= 4'h0;  // Lower nibble of mode
+                    timeout_counter <= timeout_counter + 1;
+                    dq_output_en <= 4'h0;  // Switch all DQ to input for data phase
                 end
                 
                 DUMMY_WAIT: begin
-                    // 8 dummy cycles required for Fast Read Quad
+                    // 4 dummy cycles required for Fast Read Quad I/O
                     dummy_counter <= dummy_counter + 1;
                     timeout_counter <= timeout_counter + 1;
                 end
@@ -367,19 +381,19 @@ module rom_controller (
                 DONE: begin
                     cs_n <= 1'b1;  // Deassert chip select
                     data_valid <= 1'b1;  // Mark data as valid
-                    timeout_counter <= 6'd0;
+                    timeout_counter <= 5'd0;
                 end
                 
                 ERROR: begin
                     cs_n <= 1'b1;  // Deassert chip select on error
-                    dq0_output_en <= 1'b0;
+                    dq_output_en <= 4'h0;
                     data_valid <= 1'b0;  // Clear valid flag on error
-                    timeout_counter <= 6'd0;
+                    timeout_counter <= 5'd0;
                 end
                 
                 default: begin
                     cs_n <= 1'b1;
-                    dq0_output_en <= 1'b0;
+                    dq_output_en <= 4'h0;
                 end
             endcase
         end
@@ -392,6 +406,9 @@ module rom_controller (
         if (device_select && read_req) begin
             unique case (register_offset)
                 REG_ROM_ADDR: begin
+                    rdata = 16'hFFFF;  // Write-only register
+                end
+                REG_ROM_BANK: begin
                     rdata = 16'hFFFF;  // Write-only register
                 end
                 REG_ROM_DATA: begin

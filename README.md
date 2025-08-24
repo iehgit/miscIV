@@ -133,10 +133,11 @@ All I/O devices are accessed via memory-mapped registers at addresses 0x8000-0xF
 | ADDRESS | NAME       | R/W | DESCRIPTION                        |
 |---------|------------|-----|------------------------------------|
 | 0xFFC0  | ROM_ADDR   | W   | Word address (write triggers read) |
-| 0xFFC1  | ROM_DATA   | R   | Read data (16-bit word)            |
-| 0xFFC2  | ROM_STATUS | R   | [0]=Data valid                     |
+| 0xFFC1  | ROM_BANK   | W   | Bank select [3:0] (0-15)           |
+| 0xFFC2  | ROM_DATA   | R   | Read data (16-bit word)            |
+| 0xFFC3  | ROM_STATUS | R   | [0]=Data valid                     |
 
-**NOTES:** 64K words (128KB) stored in SPI flash at 2MB offset. Quad-SPI interface at 50MHz. Write to ROM_ADDR triggers read, poll ROM_STATUS[0] for completion (~880ns).
+**NOTES:** 2MB total (16 banks × 64K words each) stored in SPI flash starting at 2MB offset. Quad I/O interface at 50MHz. Write to ROM_ADDR triggers read from current bank, poll ROM_STATUS[0] for completion (max 49 CPU cycles). Bank 0 default on reset.
 
 ### KEYBOARD (0xFFA0-0xFFAF)
 
