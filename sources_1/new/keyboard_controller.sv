@@ -15,11 +15,46 @@ module keyboard_controller (
     input  logic        PS2Data       // PS/2 data from keyboard
 );
 
+    // ========================================================================
+    // Dual-FIFO Keyboard Controller with ASCII Translation
+    // ========================================================================
+    // This controller provides two independent data paths:
+    //
+    // 1. Raw FIFO: Stores all PS/2 scan codes (make/break, extended, etc.)
+    //    - For software that needs low-level keyboard access
+    //    - Captures all keyboard events including special keys
+    //
+    // 2. ASCII FIFO: Stores only translated ASCII characters
+    //    - For text input applications
+    //    - Automatically handles shift state for uppercase/symbols
+    //    - Filters out non-printable keys
+    //
+    // Both FIFOs are 8-entry deep and can be cleared simultaneously
+    // ========================================================================
+    
+    // ========================================================================
+    // Register Map:
+    // ========================================================================
+    // 0xFFA0 (REG_KBD_ASCII):   Read ASCII character (0 if buffer empty)
+    // 0xFFA1 (REG_KBD_RAW):     Read raw scan code (0 if buffer empty)
+    // 0xFFA2 (REG_KBD_STATUS):  Status register
+    //                           [0] = Raw data available
+    //                           [1] = Raw FIFO full
+    //                           [2] = Raw FIFO overflow
+    //                           [3] = ASCII data available
+    //                           [4] = ASCII FIFO full
+    //                           [5] = ASCII FIFO overflow
+    //                           [15:6] = Reserved
+    // 0xFFA3 (REG_KBD_CONTROL): Control register (write-only)
+    //                           [0] = Clear both FIFOs
+    //                           [15:1] = Reserved
+    // ========================================================================
+
     // Register offsets
-    localparam logic [3:0] REG_KBD_ASCII   = 4'h0;  // ASCII character (unimplemented)
-    localparam logic [3:0] REG_KBD_RAW     = 4'h1;  // Raw scan code
+    localparam logic [3:0] REG_KBD_ASCII   = 4'h0;  // ASCII character from ASCII FIFO
+    localparam logic [3:0] REG_KBD_RAW     = 4'h1;  // Raw scan code from Raw FIFO
     localparam logic [3:0] REG_KBD_STATUS  = 4'h2;  // Status register
-    localparam logic [3:0] REG_KBD_CONTROL = 4'h3;  // Control register
+    localparam logic [3:0] REG_KBD_CONTROL = 4'h3;  // Control register (bit 0 = clear FIFOs)
     
     // Timeout value (10,000 cycles = 100μs @ 100MHz)
     localparam logic [13:0] TIMEOUT_CYCLES = 14'd10000;
@@ -56,20 +91,42 @@ module keyboard_controller (
     logic        frame_valid;         // Frame passed validation
     logic        parity_valid;        // Parity check result
     
-    // FIFO for scan codes (8-deep)
-    logic [7:0]  fifo_mem [0:7];      // FIFO memory
-    logic [2:0]  fifo_write_ptr;      // Write pointer
-    logic [2:0]  fifo_read_ptr;       // Read pointer
-    logic [3:0]  fifo_count;          // Number of entries (0-8)
-    logic        fifo_write;          // Write strobe
-    logic        fifo_read;           // Read strobe
-    logic        fifo_empty;          // FIFO empty flag
-    logic        fifo_full;           // FIFO full flag
-    logic        fifo_overflow;       // Overflow occurred
-    logic [7:0]  fifo_read_data;      // Data at read pointer
+    //=========================================================================
+    // Raw Scan Code FIFO
+    //=========================================================================
+    logic [7:0]  raw_fifo_mem [0:7];      // FIFO memory
+    logic [2:0]  raw_fifo_write_ptr;      // Write pointer
+    logic [2:0]  raw_fifo_read_ptr;       // Read pointer
+    logic [3:0]  raw_fifo_count;          // Number of entries (0-8)
+    logic        raw_fifo_write;          // Write strobe from frame decoder
+    logic        raw_fifo_read;           // Read strobe from register interface
+    logic        raw_fifo_empty;          // FIFO empty flag
+    logic        raw_fifo_full;           // FIFO full flag
+    logic        raw_fifo_overflow;       // Overflow occurred
+    logic [7:0]  raw_fifo_read_data;      // Data at read pointer
+    
+    //=========================================================================
+    // ASCII Translator Signals
+    //=========================================================================
+    logic [6:0]  translator_ascii_code;   // ASCII output from translator
+    logic        translator_ascii_valid;  // Valid ASCII produced
+    
+    //=========================================================================
+    // ASCII FIFO
+    //=========================================================================
+    logic [7:0]  ascii_fifo_mem [0:7];    // Store as 8-bit (MSB=0 for 7-bit ASCII)
+    logic [2:0]  ascii_fifo_write_ptr;    // Write pointer
+    logic [2:0]  ascii_fifo_read_ptr;     // Read pointer
+    logic [3:0]  ascii_fifo_count;        // Number of entries (0-8)
+    logic        ascii_fifo_write;        // Write strobe from translator
+    logic        ascii_fifo_read;         // Read strobe from register interface
+    logic        ascii_fifo_empty;        // FIFO empty flag
+    logic        ascii_fifo_full;         // FIFO full flag
+    logic        ascii_fifo_overflow;     // Overflow occurred
+    logic [7:0]  ascii_fifo_read_data;    // Data at read pointer
     
     // Control signals
-    logic        clear_fifo;          // Clear FIFO command
+    logic        clear_fifos;             // Clear both FIFOs command
     
     //=========================================================================
     // PS/2 Signal Synchronization and Edge Detection
@@ -228,10 +285,10 @@ module keyboard_controller (
             stop_bit <= 1'b0;
             timeout_counter <= 14'd0;
             frame_valid <= 1'b0;
-            fifo_write <= 1'b0;
+            raw_fifo_write <= 1'b0;
         end else begin
             // Default: clear write strobe
-            fifo_write <= 1'b0;
+            raw_fifo_write <= 1'b0;
             frame_valid <= 1'b0;
             
             case (ps2_state)
@@ -343,7 +400,7 @@ module keyboard_controller (
                     // Stop bit must be 1, and odd parity must be correct
                     if (stop_bit && parity_valid) begin
                         frame_valid <= 1'b1;
-                        fifo_write <= 1'b1;  // Write to FIFO
+                        raw_fifo_write <= 1'b1;  // Write to raw FIFO
                     end
                 end
                 
@@ -364,49 +421,113 @@ module keyboard_controller (
     end
     
     //=========================================================================
-    // FIFO Management
+    // ASCII Translator Instantiation
     //=========================================================================
     
-    assign fifo_empty = (fifo_count == 4'd0);
-    assign fifo_full = (fifo_count == 4'd8);
-    assign fifo_read_data = fifo_mem[fifo_read_ptr];
+    ascii_translator ascii_xlate (
+        .clk(clk),
+        .reset(reset),
+        .scan_code(shift_reg),
+        .scan_valid(frame_valid),
+        .ascii_code(translator_ascii_code),
+        .ascii_valid(translator_ascii_valid)
+    );
+    
+    //=========================================================================
+    // Raw Scan Code FIFO Management
+    //=========================================================================
+    
+    assign raw_fifo_empty = (raw_fifo_count == 4'd0);
+    assign raw_fifo_full = (raw_fifo_count == 4'd8);
+    assign raw_fifo_read_data = raw_fifo_mem[raw_fifo_read_ptr];
     
     always_ff @(posedge clk) begin
-        if (reset || clear_fifo) begin
-            fifo_write_ptr <= 3'd0;
-            fifo_read_ptr <= 3'd0;
-            fifo_count <= 4'd0;
-            fifo_overflow <= 1'b0;
+        if (reset || clear_fifos) begin
+            raw_fifo_write_ptr <= 3'd0;
+            raw_fifo_read_ptr <= 3'd0;
+            raw_fifo_count <= 4'd0;
+            raw_fifo_overflow <= 1'b0;
             
             // Clear FIFO memory
             for (int i = 0; i < 8; i++) begin
-                fifo_mem[i] <= 8'h00;
+                raw_fifo_mem[i] <= 8'h00;
             end
         end else begin
             // Handle simultaneous read and write
-            if (fifo_write && fifo_read && !fifo_empty) begin
+            if (raw_fifo_write && raw_fifo_read && !raw_fifo_empty) begin
                 // Write new data and advance write pointer
-                fifo_mem[fifo_write_ptr] <= shift_reg;
-                fifo_write_ptr <= fifo_write_ptr + 1;
+                raw_fifo_mem[raw_fifo_write_ptr] <= shift_reg;
+                raw_fifo_write_ptr <= raw_fifo_write_ptr + 1;
                 // Advance read pointer
-                fifo_read_ptr <= fifo_read_ptr + 1;
+                raw_fifo_read_ptr <= raw_fifo_read_ptr + 1;
                 // Count stays the same
             end
             // Handle write only
-            else if (fifo_write && !fifo_full) begin
-                fifo_mem[fifo_write_ptr] <= shift_reg;
-                fifo_write_ptr <= fifo_write_ptr + 1;
-                fifo_count <= fifo_count + 1;
+            else if (raw_fifo_write && !raw_fifo_full) begin
+                raw_fifo_mem[raw_fifo_write_ptr] <= shift_reg;
+                raw_fifo_write_ptr <= raw_fifo_write_ptr + 1;
+                raw_fifo_count <= raw_fifo_count + 1;
             end
             // Handle overflow
-            else if (fifo_write && fifo_full) begin
-                fifo_overflow <= 1'b1;  // Set overflow flag, discard data
+            else if (raw_fifo_write && raw_fifo_full) begin
+                raw_fifo_overflow <= 1'b1;  // Set overflow flag, discard data
             end
             // Handle read only
-            else if (fifo_read && !fifo_empty) begin
-                fifo_read_ptr <= fifo_read_ptr + 1;
-                fifo_count <= fifo_count - 1;
-                fifo_overflow <= 1'b0;  // Clear overflow on successful read
+            else if (raw_fifo_read && !raw_fifo_empty) begin
+                raw_fifo_read_ptr <= raw_fifo_read_ptr + 1;
+                raw_fifo_count <= raw_fifo_count - 1;
+                raw_fifo_overflow <= 1'b0;  // Clear overflow on successful read
+            end
+        end
+    end
+    
+    //=========================================================================
+    // ASCII FIFO Management
+    //=========================================================================
+    
+    assign ascii_fifo_empty = (ascii_fifo_count == 4'd0);
+    assign ascii_fifo_full = (ascii_fifo_count == 4'd8);
+    assign ascii_fifo_read_data = ascii_fifo_mem[ascii_fifo_read_ptr];
+    
+    // ASCII FIFO write control - only write valid, non-zero ASCII codes
+    assign ascii_fifo_write = translator_ascii_valid && (translator_ascii_code != 7'h00);
+    
+    always_ff @(posedge clk) begin
+        if (reset || clear_fifos) begin
+            ascii_fifo_write_ptr <= 3'd0;
+            ascii_fifo_read_ptr <= 3'd0;
+            ascii_fifo_count <= 4'd0;
+            ascii_fifo_overflow <= 1'b0;
+            
+            // Clear FIFO memory
+            for (int i = 0; i < 8; i++) begin
+                ascii_fifo_mem[i] <= 8'h00;
+            end
+        end else begin
+            // Handle simultaneous read and write
+            if (ascii_fifo_write && ascii_fifo_read && !ascii_fifo_empty) begin
+                // Write new data and advance write pointer
+                ascii_fifo_mem[ascii_fifo_write_ptr] <= {1'b0, translator_ascii_code};
+                ascii_fifo_write_ptr <= ascii_fifo_write_ptr + 1;
+                // Advance read pointer
+                ascii_fifo_read_ptr <= ascii_fifo_read_ptr + 1;
+                // Count stays the same
+            end
+            // Handle write only
+            else if (ascii_fifo_write && !ascii_fifo_full) begin
+                ascii_fifo_mem[ascii_fifo_write_ptr] <= {1'b0, translator_ascii_code};
+                ascii_fifo_write_ptr <= ascii_fifo_write_ptr + 1;
+                ascii_fifo_count <= ascii_fifo_count + 1;
+            end
+            // Handle overflow
+            else if (ascii_fifo_write && ascii_fifo_full) begin
+                ascii_fifo_overflow <= 1'b1;  // Set overflow flag, discard data
+            end
+            // Handle read only
+            else if (ascii_fifo_read && !ascii_fifo_empty) begin
+                ascii_fifo_read_ptr <= ascii_fifo_read_ptr + 1;
+                ascii_fifo_count <= ascii_fifo_count - 1;
+                ascii_fifo_overflow <= 1'b0;  // Clear overflow on successful read
             end
         end
     end
@@ -415,18 +536,21 @@ module keyboard_controller (
     // Register Interface
     //=========================================================================
     
-    // Generate FIFO read strobe when RAW register is read
-    assign fifo_read = device_select && read_req && (register_offset == REG_KBD_RAW) && !fifo_empty;
+    // Generate FIFO read strobes when registers are read
+    assign raw_fifo_read = device_select && read_req && 
+                          (register_offset == REG_KBD_RAW) && !raw_fifo_empty;
+    assign ascii_fifo_read = device_select && read_req && 
+                            (register_offset == REG_KBD_ASCII) && !ascii_fifo_empty;
     
     // Control register write handling
     always_ff @(posedge clk) begin
         if (reset) begin
-            clear_fifo <= 1'b0;
+            clear_fifos <= 1'b0;
         end else begin
-            clear_fifo <= 1'b0;  // Default: clear strobe
+            clear_fifos <= 1'b0;    // Default: clear strobe
             
             if (device_select && write_req && register_offset == REG_KBD_CONTROL) begin
-                clear_fifo <= wdata[0];  // Bit 0 = clear FIFO
+                clear_fifos <= wdata[0];     // Bit 0 = clear both FIFOs
             end
         end
     end
@@ -438,14 +562,29 @@ module keyboard_controller (
         if (device_select && read_req) begin
             unique case (register_offset)
                 REG_KBD_ASCII: begin
-                    rdata = 16'h0000;  // ASCII not implemented yet
+                    // Return ASCII character or 0 if FIFO empty
+                    rdata = ascii_fifo_empty ? 16'h0000 : {8'h00, ascii_fifo_read_data};
                 end
                 REG_KBD_RAW: begin
-                    rdata = fifo_empty ? 16'h0000 : {8'h00, fifo_read_data};
+                    // Return raw scan code or 0 if FIFO empty
+                    rdata = raw_fifo_empty ? 16'h0000 : {8'h00, raw_fifo_read_data};
                 end
                 REG_KBD_STATUS: begin
-                    // [2]=Overflow, [1]=Full, [0]=Data available
-                    rdata = {13'h0000, fifo_overflow, fifo_full, !fifo_empty};
+                    // Status register
+                    // [0] = Raw data available
+                    // [1] = Raw FIFO full
+                    // [2] = Raw FIFO overflow
+                    // [3] = ASCII data available
+                    // [4] = ASCII FIFO full
+                    // [5] = ASCII FIFO overflow
+                    // [15:6] = Reserved
+                    rdata = {10'h000,                   // [15:6] Reserved
+                            ascii_fifo_overflow,         // [5] ASCII overflow
+                            ascii_fifo_full,             // [4] ASCII full
+                            !ascii_fifo_empty,           // [3] ASCII available
+                            raw_fifo_overflow,           // [2] Raw overflow
+                            raw_fifo_full,               // [1] Raw full
+                            !raw_fifo_empty};            // [0] Raw available
                 end
                 REG_KBD_CONTROL: begin
                     rdata = 16'h0000;  // Write-only register
