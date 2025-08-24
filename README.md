@@ -43,24 +43,24 @@ memory-mapped I/O, and a 3-stage pipeline with specialized register behaviors.
 
 ## REGISTER FILE (16 REGISTERS)
 
-| REG | QUIRKS AND SPECIAL BEHAVIORS                                     | ISR SHADOW |
-|-----|------------------------------------------------------------------|------------|
-| R0  | General purpose register                                         | YES        |
-| R1  | General purpose register                                         | YES        |
-| R2  | General purpose register                                         | YES        |
-| R3  | General purpose register                                         | YES        |
-| R4  | General purpose register                                         | YES        |
-| R5  | General purpose register                                         | YES        |
-| R6  | General purpose register                                         | YES        |
-| R7  | General purpose register                                         | YES        |
-| R8  | General purpose register                                         | NO         |
-| R9  | General purpose register                                         | NO         |
-| R10 | General purpose register                                         | NO         |
-| R11 | General purpose register                                         | NO         |
-| R12 | Initialized to 1 on reset (others initialize to 0)             | NO         |
-| R13 | Auto-decrements when used as source operand                     | NO         |
-| R14 | LIFO stack: push on write, pop on read, 8-level deep           | NO         |
-| R15 | Program counter: reads return current PC+flag, writes trigger branches | NO   |
+| REG | QUIRKS AND SPECIAL BEHAVIORS                                           | ISR SHADOW |
+|-----|------------------------------------------------------------------------|------------|
+| R0  | General purpose register                                               | YES        |
+| R1  | General purpose register                                               | YES        |
+| R2  | General purpose register                                               | YES        |
+| R3  | General purpose register                                               | YES        |
+| R4  | General purpose register                                               | YES        |
+| R5  | General purpose register                                               | YES        |
+| R6  | General purpose register                                               | YES        |
+| R7  | General purpose register                                               | YES        |
+| R8  | General purpose register                                               | NO         |
+| R9  | General purpose register                                               | NO         |
+| R10 | General purpose register                                               | NO         |
+| R11 | General purpose register                                               | NO         |
+| R12 | Initialized to 1 on reset (others initialize to 0)                     | NO         |
+| R13 | Auto-decrements when used as source operand                            | NO         |
+| R14 | LIFO stack: push on write, pop on read, 8-level deep                   | NO         |
+| R15 | Program counter: reads return current PC+flag, writes trigger branches | NO         |
 
 **NOTES:**
 - All registers R0-R15 are 17 bits wide (16 data + 1 flag bit)
@@ -84,42 +84,42 @@ All I/O devices are accessed via memory-mapped registers at addresses 0x8000-0xF
 
 ### SIMPLE I/O (0xFFF0-0xFFFF)
 
-| ADDRESS | NAME            | R/W | DESCRIPTION                         |
-|---------|-----------------|-----|-------------------------------------|
-| 0xFFFC  | CYCLE_CTR       | R/W | Free-running cycle counter         |
-| 0xFFFD  | SECONDS_CTR     | R/W | Seconds counter (~1Hz)             |
-| 0xFFFE  | SWITCHES        | R   | 16 slide switches                  |
-| 0xFFFF  | LEDS            | R/W | 16 LED outputs                     |
+| ADDRESS | NAME        | R/W | DESCRIPTION                |
+|---------|-------------|-----|----------------------------|
+| 0xFFFC  | CYCLE_CTR   | R/W | Free-running cycle counter |
+| 0xFFFD  | SECONDS_CTR | R/W | Seconds counter (~1Hz)     |
+| 0xFFFE  | SWITCHES    | R   | 16 slide switches          |
+| 0xFFFF  | LEDS        | R/W | 16 LED outputs             |
 
 ### UART (0xFFE0-0xFFEF)
 
-| ADDRESS | NAME            | R/W | DESCRIPTION                         |
-|---------|-----------------|-----|-------------------------------------|
-| 0xFFE0  | TX_DATA         | W   | Transmit 16-bit word (2 chars)     |
-| 0xFFE1  | RX_DATA         | R   | Receive 16-bit word (2 chars)      |
-| 0xFFE2  | TX_STATUS       | R   | [3]=Full, [2]=Empty, [1]=Busy      |
-| 0xFFE3  | RX_STATUS       | R   | [3]=Full, [2]=Empty, [1]=Avail, [0]=Padded |
-| 0xFFE4  | TX_BYTE         | W   | Transmit single byte                |
+| ADDRESS | NAME      | R/W | DESCRIPTION                                |
+|---------|-----------|-----|--------------------------------------------|
+| 0xFFE0  | TX_DATA   | W   | Transmit 16-bit word (2 chars)             |
+| 0xFFE1  | RX_DATA   | R   | Receive 16-bit word (2 chars)              |
+| 0xFFE2  | TX_STATUS | R   | [3]=Full, [2]=Empty, [1]=Busy              |
+| 0xFFE3  | RX_STATUS | R   | [3]=Full, [2]=Empty, [1]=Avail, [0]=Padded |
+| 0xFFE4  | TX_BYTE   | W   | Transmit single byte                       |
 
 **NOTES:** 9600 baud, 8N1. 4-entry FIFOs for TX and RX. Word mode sends/receives 2 characters. RX pads single chars with 0x00 after timeout.
 
 ### GPU (0xFFD0-0xFFDF)
 
-| ADDRESS | NAME            | R/W | DESCRIPTION                         |
-|---------|-----------------|-----|-------------------------------------|
-| 0xFFD0  | CHAR_INPUT      | R/W | [15:8]=ASCII2+inv, [7:0]=ASCII1+inv |
-| 0xFFD1  | CHAR_COORD      | R/W | [12:8]=Y (0-24), [5:0]=X (0-39)    |
-| 0xFFD2  | CHAR_CONTROL    | W   | [11]=Clear, [10]=Add, [9]=FixPos, [8]=PutChar |
-| 0xFFD5  | PIXEL_DATA      | R/W | 16 pixels bitmap data              |
-| 0xFFD6  | GRAPHICS_COORD  | R/W | [15:8]=Y (0-199), [5:0]=X (0-39)   |
-| 0xFFD7  | GRAPHICS_CTRL   | W   | [11]=Clear, [10]=Add, [9]=FixPos, [8]=PutPixel |
-| 0xFFD9  | STATUS          | R   | [0]=Busy                            |
-| 0xFFDA  | PALETTE_1       | R/W | Palette bits [15:0] for cell rows 0-15 |
-| 0xFFDB  | PALETTE_2       | R/W | Palette bits [24:16] for cell rows 16-24 |
-| 0xFFDC  | FLIP_CONTROL    | R/W | [9]=Display buffer, [8]=Write buffer |
-| 0xFFDD  | COLOR_VALUES    | R/W | [15:8]=FG[7:4]/BG[3:0] for color cell |
-| 0xFFDE  | COLOR_COORD     | R/W | [12:8]=Y (0-24), [5:0]=X (0-39)    |
-| 0xFFDF  | COLOR_CONTROL   | W   | [11]=Clear colors, [8]=PutColor    |
+| ADDRESS | NAME           | R/W | DESCRIPTION                                    |
+|---------|----------------|-----|------------------------------------------------|
+| 0xFFD0  | CHAR_INPUT     | R/W | [15:8]=ASCII2+inv, [7:0]=ASCII1+inv            |
+| 0xFFD1  | CHAR_COORD     | R/W | [12:8]=Y (0-24), [5:0]=X (0-39)                |
+| 0xFFD2  | CHAR_CONTROL   | W   | [11]=Clear, [10]=Add, [9]=FixPos, [8]=PutChar  |
+| 0xFFD5  | PIXEL_DATA     | R/W | 16 pixels bitmap data                          |
+| 0xFFD6  | GRAPHICS_COORD | R/W | [15:8]=Y (0-199), [5:0]=X (0-39)               |
+| 0xFFD7  | GRAPHICS_CTRL  | W   | [11]=Clear, [10]=Add, [9]=FixPos, [8]=PutPixel |
+| 0xFFD9  | STATUS         | R   | [0]=Busy                                       |
+| 0xFFDA  | PALETTE_1      | R/W | Palette bits [15:0] for cell rows 0-15         |
+| 0xFFDB  | PALETTE_2      | R/W | Palette bits [24:16] for cell rows 16-24       |
+| 0xFFDC  | FLIP_CONTROL   | R/W | [9]=Display buffer, [8]=Write buffer           |
+| 0xFFDD  | COLOR_VALUES   | R/W | [15:8]=FG[7:4]/BG[3:0] for color cell          |
+| 0xFFDE  | COLOR_COORD    | R/W | [12:8]=Y (0-24), [5:0]=X (0-39)                |
+| 0xFFDF  | COLOR_CONTROL  | W   | [11]=Clear colors, [8]=PutColor                |
 
 **NOTES:** 
 - 320x200 monochrome pixels, double-buffered, 640x400@70Hz VGA output
@@ -130,29 +130,29 @@ All I/O devices are accessed via memory-mapped registers at addresses 0x8000-0xF
 
 ### ROM (0xFFC0-0xFFCF)
 
-| ADDRESS | NAME            | R/W | DESCRIPTION                         |
-|---------|-----------------|-----|-------------------------------------|
-| 0xFFC0  | ROM_ADDR        | W   | Word address (write triggers read) |
-| 0xFFC1  | ROM_DATA        | R   | Read data (16-bit word)            |
-| 0xFFC2  | ROM_STATUS      | R   | [0]=Data valid                     |
+| ADDRESS | NAME       | R/W | DESCRIPTION                        |
+|---------|------------|-----|------------------------------------|
+| 0xFFC0  | ROM_ADDR   | W   | Word address (write triggers read) |
+| 0xFFC1  | ROM_DATA   | R   | Read data (16-bit word)            |
+| 0xFFC2  | ROM_STATUS | R   | [0]=Data valid                     |
 
 **NOTES:** 64K words (128KB) stored in SPI flash at 2MB offset. Quad-SPI interface at 50MHz. Write to ROM_ADDR triggers read, poll ROM_STATUS[0] for completion (~880ns).
 
 ### KEYBOARD (0xFFA0-0xFFAF)
 
-| ADDRESS | NAME            | R/W | DESCRIPTION                         |
-|---------|-----------------|-----|-------------------------------------|
-| 0xFFA0  | KBD_ASCII       | R   | ASCII character (unimplemented)    |
-| 0xFFA1  | KBD_RAW         | R   | Raw scan code from FIFO            |
-| 0xFFA2  | KBD_STATUS      | R   | [2]=Overflow, [1]=Full, [0]=Available |
-| 0xFFA3  | KBD_CONTROL     | W   | [0]=Clear FIFO                     |
+| ADDRESS | NAME        | R/W | DESCRIPTION                                                    |
+|---------|-------------|-----|----------------------------------------------------------------|
+| 0xFFA0  | KBD_ASCII   | R   | ASCII character from FIFO                                      |
+| 0xFFA1  | KBD_RAW     | R   | Raw scan code from FIFO                                        |
+| 0xFFA2  | KBD_STATUS  | R   | [5:3]=ASCII overflow/full/avail, [2:0]=Raw overflow/full/avail |
+| 0xFFA3  | KBD_CONTROL | W   | [0]=Clear both FIFOs                                           |
 
-**NOTES:** PS/2 keyboard interface. 8-entry FIFO stores raw scan codes (Set 2). Captures all codes including make (press), break (F0 prefix = release), and extended (E0 prefix). Reading KBD_RAW auto-advances FIFO. ASCII conversion planned for future enhancement.
+**NOTES:** PS/2 keyboard with dual 8-entry FIFOs. Raw FIFO stores all scan codes (make/break/extended). ASCII FIFO stores translated 7-bit ASCII for printable keys with shift support. Enter key maps to LF (0x0A). Reading either register auto-advances respective FIFO. Returns 0 when FIFO empty.
 
 ### AUDIO (0xFFB0-0xFFBF)
 
-| ADDRESS | NAME            | R/W | DESCRIPTION                         |
-|---------|-----------------|-----|-------------------------------------|
+| ADDRESS | NAME            | R/W | DESCRIPTION                        |
+|---------|-----------------|-----|------------------------------------|
 | 0xFFB0  | SAW_FREQ        | R/W | Sawtooth frequency in Hz           |
 | 0xFFB1  | SAW_DURATION    | R/W | Sawtooth duration in ms (triggers) |
 | 0xFFB2  | SQUARE_FREQ     | R/W | Square wave frequency in Hz        |
