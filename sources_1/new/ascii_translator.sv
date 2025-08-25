@@ -6,6 +6,7 @@
 // Features:
 // - Translates keys that have ASCII representations (letters, digits, symbols)
 // - Tracks shift key state for uppercase letters and shifted symbols  
+// - Tracks ctrl key state for control characters (Ctrl+A through Ctrl+Z)
 // - Handles break codes (0xF0) to detect key releases
 // - Ignores extended codes (0xE0) as they represent non-ASCII keys
 // - Outputs ASCII only on key press events, not releases
@@ -31,6 +32,7 @@ module ascii_translator (
     localparam logic [7:0] SCAN_EXTENDED  = 8'hE0;  // Extended code prefix (non-ASCII keys)
     localparam logic [7:0] SCAN_LSHIFT    = 8'h12;  // Left shift
     localparam logic [7:0] SCAN_RSHIFT    = 8'h59;  // Right shift
+    localparam logic [7:0] SCAN_LCTRL     = 8'h14;  // Left ctrl
     
     // State machine for scan code processing
     typedef enum logic [1:0] {
@@ -46,13 +48,22 @@ module ascii_translator (
     logic next_left_shift_down, next_right_shift_down;
     logic shift_state;  // Internal shift state
     
+    // Ctrl key tracking
+    logic left_ctrl_down;
+    logic next_left_ctrl_down;
+    logic ctrl_state;   // Internal ctrl state
+    
     // ASCII lookup signals
     logic [6:0] ascii_normal, ascii_shifted;
     logic [6:0] ascii_output;
     logic       generate_ascii;
+    logic       is_letter_key;  // Flag for A-Z keys
     
     // Internal shift state (for selecting shifted ASCII)
     assign shift_state = left_shift_down || right_shift_down;
+    
+    // Internal ctrl state
+    assign ctrl_state = left_ctrl_down;
     
     // Instantiate ASCII lookup ROM
     ascii_lookup_rom lookup_rom (
@@ -60,6 +71,10 @@ module ascii_translator (
         .ascii_normal(ascii_normal),
         .ascii_shifted(ascii_shifted)
     );
+    
+    // Detect if current scan code is a letter key (A-Z)
+    // Check if ascii_normal is lowercase a-z (0x61-0x7A)
+    assign is_letter_key = (ascii_normal >= 7'h61) && (ascii_normal <= 7'h7A);
     
     //=========================================================================
     // State Machine
@@ -71,10 +86,12 @@ module ascii_translator (
             state <= STATE_NORMAL;
             left_shift_down <= 1'b0;
             right_shift_down <= 1'b0;
+            left_ctrl_down <= 1'b0;
         end else begin
             state <= next_state;
             left_shift_down <= next_left_shift_down;
             right_shift_down <= next_right_shift_down;
+            left_ctrl_down <= next_left_ctrl_down;
         end
     end
     
@@ -84,6 +101,7 @@ module ascii_translator (
         next_state = state;
         next_left_shift_down = left_shift_down;
         next_right_shift_down = right_shift_down;
+        next_left_ctrl_down = left_ctrl_down;
         generate_ascii = 1'b0;
         ascii_output = 7'h00;
         
@@ -113,13 +131,26 @@ module ascii_translator (
                             next_right_shift_down = 1'b1;
                         end
                         
+                        SCAN_LCTRL: begin
+                            // Left ctrl pressed
+                            next_left_ctrl_down = 1'b1;
+                        end
+                        
                         default: begin
                             // Regular key press - generate ASCII if available
-                            if (shift_state) begin
+                            
+                            // Handle Ctrl+letter combinations (A-Z)
+                            if (ctrl_state && is_letter_key) begin
+                                // Ctrl+letter: use uppercase ASCII & 0x1F to get control character
+                                ascii_output = ascii_shifted & 7'h1F;
+                            end else if (shift_state) begin
+                                // Shifted character
                                 ascii_output = ascii_shifted;
                             end else begin
+                                // Normal character
                                 ascii_output = ascii_normal;
                             end
+                            
                             // Only generate ASCII if lookup returned non-zero
                             generate_ascii = (ascii_output != 7'h00);
                         end
@@ -130,7 +161,7 @@ module ascii_translator (
                     // This is a break code (key release)
                     next_state = STATE_NORMAL;
                     
-                    // Check if it's a shift key release
+                    // Check if it's a modifier key release
                     case (scan_code)
                         SCAN_LSHIFT: begin
                             next_left_shift_down = 1'b0;
@@ -138,6 +169,10 @@ module ascii_translator (
                         
                         SCAN_RSHIFT: begin
                             next_right_shift_down = 1'b0;
+                        end
+                        
+                        SCAN_LCTRL: begin
+                            next_left_ctrl_down = 1'b0;
                         end
                         
                         default: begin
