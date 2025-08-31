@@ -21,31 +21,55 @@ module uart_controller (
     localparam logic [3:0] TX_STATUS_REG = 4'h2;  // 0xFFE2: TX Status
     localparam logic [3:0] RX_STATUS_REG = 4'h3;  // 0xFFE3: RX Status
     localparam logic [3:0] TX_BYTE_REG   = 4'h4;  // 0xFFE4: TX Single Byte
+    localparam logic [3:0] CONTROL_REG   = 4'h5;  // 0xFFE5: UART Control Register
     
-    // Timing constants for 9600 baud at 100MHz system clock
-    localparam int BAUD_DIVISOR = 10416;           // 100MHz / 9600 baud ≈ 10416
+    // Baud rate divisors for 100MHz system clock (pre-decremented for comparison)
+    localparam int BAUD_DIV_9600  = 10416;         // (100MHz / 9600) - 1
+    localparam int BAUD_DIV_19200 = 5207;          // (100MHz / 19200) - 1
+    localparam int BAUD_DIV_38400 = 2603;          // (100MHz / 38400) - 1
+    localparam int BAUD_DIV_57600 = 1735;          // (100MHz / 57600) - 1
+    
+    // Other timing constants
     localparam int TIMEOUT_CYCLES = 31;            // RX timeout in baud cycles  
     localparam int BITS_PER_CHAR = 10;             // Start + 8 data + stop bits
     localparam int BITS_PER_WORD = 20;             // 2 characters per word
     
+    // Control register
+    logic [15:0] control_reg;
+    logic [1:0]  baud_select;
+    assign baud_select = control_reg[1:0];
+    
+    // Variable baud divisor based on control register
+    logic [13:0] baud_divisor;
+    
+    always_comb begin
+        unique case (baud_select)
+            2'b00: baud_divisor = BAUD_DIV_9600;
+            2'b01: baud_divisor = BAUD_DIV_19200;
+            2'b10: baud_divisor = BAUD_DIV_38400;
+            2'b11: baud_divisor = BAUD_DIV_57600;
+        endcase
+    end
+    
     // BAUD RATE GENERATOR - Single source of timing for all operations
     logic [13:0] baud_counter;
+    logic        baud_counter_reset;  // Reset signal when control register changes
     
-    // TX FIFO (4 entries deep) with mode tracking per entry
-    logic [15:0] tx_fifo [0:3];       // Data storage
-    logic        tx_fifo_mode [0:3];  // Mode flags: 0=word mode, 1=byte mode
-    logic [1:0]  tx_fifo_head, tx_fifo_tail;
-    logic [2:0]  tx_fifo_count;       // Current occupancy: 0-4
+    // TX FIFO (8 entries deep) with mode tracking per entry
+    logic [15:0] tx_fifo [0:7];       // Data storage
+    logic        tx_fifo_mode [0:7];  // Mode flags: 0=word mode, 1=byte mode
+    logic [2:0]  tx_fifo_head, tx_fifo_tail;
+    logic [3:0]  tx_fifo_count;       // Current occupancy: 0-8
     logic        tx_fifo_empty, tx_fifo_full;
     logic        tx_fifo_write, tx_fifo_write_byte, tx_fifo_read;
     logic [15:0] tx_fifo_data_out;    // Current entry data
     logic        tx_fifo_mode_out;    // Current entry mode
     
-    // RX FIFO (4 words deep) with parallel padding flags
-    logic [15:0] rx_fifo [0:3];      // Data words
-    logic        rx_padding_fifo [0:3]; // Padding flags (one per word)
-    logic [1:0]  rx_fifo_head, rx_fifo_tail;
-    logic [2:0]  rx_fifo_count;  // 0-4 count
+    // RX FIFO (8 words deep) with parallel padding flags
+    logic [15:0] rx_fifo [0:7];      // Data words
+    logic        rx_padding_fifo [0:7]; // Padding flags (one per word)
+    logic [2:0]  rx_fifo_head, rx_fifo_tail;
+    logic [3:0]  rx_fifo_count;  // 0-8 count
     logic        rx_fifo_empty, rx_fifo_full;
     logic        rx_fifo_read;
     logic [15:0] rx_fifo_data_in;
@@ -92,21 +116,38 @@ module uart_controller (
     // Status registers (combinational)
     logic [15:0] tx_status, rx_status;
     
-    // TIMING OPTIMIZATION: Pre-registered read data to break critical paths
+    // Pre-registered read data to break critical paths
     logic [15:0] rx_data_reg;      // Registered FIFO output
     logic [15:0] tx_status_reg;    // Registered TX status  
     logic [15:0] rx_status_reg;    // Registered RX status
+    logic [15:0] control_reg_read; // Registered control register for reads
     
     logic        bit_boundary;        // Pulse at start of each bit period
     logic        sample_point;        // Pulse at middle of each bit period (RX sampling)
     
+    // Control register write handling with baud counter reset
     always_ff @(posedge clk) begin
         if (reset) begin
+            control_reg <= 16'h0000;  // Default: 9600 baud
+            baud_counter_reset <= 1'b0;
+        end else begin
+            if (device_select && write_req && register_offset == CONTROL_REG) begin
+                control_reg <= wdata;
+                baud_counter_reset <= 1'b1;  // Reset baud counter on control change
+            end else begin
+                baud_counter_reset <= 1'b0;
+            end
+        end
+    end
+    
+    // Baud rate generator with variable divisor
+    always_ff @(posedge clk) begin
+        if (reset || baud_counter_reset) begin
             baud_counter <= 14'd0;
             bit_boundary <= 1'b0;
             sample_point <= 1'b0;
         end else begin
-            if (baud_counter == (BAUD_DIVISOR - 1)) begin
+            if (baud_counter == baud_divisor) begin
                 // End of bit period - reset counter and pulse bit_boundary
                 baud_counter <= 14'd0;
                 bit_boundary <= 1'b1;    // Bit boundary event (start of next bit)
@@ -116,8 +157,8 @@ module uart_controller (
                 baud_counter <= baud_counter + 1;
                 bit_boundary <= 1'b0;
                 
-                // Sample point at exact middle of bit period  
-                if (baud_counter == (BAUD_DIVISOR/2 - 1)) begin
+                // Sample point at exact middle of bit period (using right-shift)
+                if (baud_counter == (baud_divisor >> 1)) begin
                     sample_point <= 1'b1;   // Sample point event (middle of bit)
                 end else begin
                     sample_point <= 1'b0;
@@ -146,17 +187,17 @@ module uart_controller (
     
     // TX FIFO management
     assign tx_fifo_empty = (tx_fifo_count == 0);
-    assign tx_fifo_full  = (tx_fifo_count == 4);
+    assign tx_fifo_full  = (tx_fifo_count == 8);
     assign tx_fifo_data_out = tx_fifo[tx_fifo_tail];
     assign tx_fifo_mode_out = tx_fifo_mode[tx_fifo_tail];
     
     always_ff @(posedge clk) begin
         if (reset) begin
-            tx_fifo_head <= 2'd0;
-            tx_fifo_tail <= 2'd0;
-            tx_fifo_count <= 3'd0;
+            tx_fifo_head <= 3'd0;
+            tx_fifo_tail <= 3'd0;
+            tx_fifo_count <= 4'd0;
             // Initialize mode flags
-            for (int i = 0; i < 4; i++) begin
+            for (int i = 0; i < 8; i++) begin
                 tx_fifo_mode[i] <= 1'b0;
             end
         end else begin
@@ -181,15 +222,15 @@ module uart_controller (
     
     // RX FIFO management - with RX-synchronized writes
     assign rx_fifo_empty = (rx_fifo_count == 0);
-    assign rx_fifo_full  = (rx_fifo_count == 4);
+    assign rx_fifo_full  = (rx_fifo_count == 8);
     
     always_ff @(posedge clk) begin
         if (reset) begin
-            rx_fifo_head <= 2'd0;
-            rx_fifo_tail <= 2'd0;
-            rx_fifo_count <= 3'd0;
+            rx_fifo_head <= 3'd0;
+            rx_fifo_tail <= 3'd0;
+            rx_fifo_count <= 4'd0;
             // Initialize padding FIFO
-            for (int i = 0; i < 4; i++) begin
+            for (int i = 0; i < 8; i++) begin
                 rx_padding_fifo[i] <= 1'b0;
             end
         end else begin
@@ -437,6 +478,9 @@ module uart_controller (
         // Register status signals every cycle for consistent timing
         tx_status_reg <= tx_status;
         rx_status_reg <= rx_status;
+        
+        // Register control register for reads
+        control_reg_read <= control_reg;
     end
     
     // Fast combinational read multiplexer using pre-registered values
@@ -444,12 +488,13 @@ module uart_controller (
         rdata = 16'hXXXX;  // Default: don't care
         if (device_select && read_req) begin
             unique case (register_offset)
-                TX_DATA_REG:   rdata = 16'hFFFF;      // Write-only register
-                TX_BYTE_REG:   rdata = 16'hFFFF;      // Write-only register  
-                RX_DATA_REG:   rdata = rx_data_reg;   // Pre-registered FIFO data
-                TX_STATUS_REG: rdata = tx_status_reg; // Pre-registered status
-                RX_STATUS_REG: rdata = rx_status_reg; // Pre-registered status
-                default:       rdata = 16'hFFFF;      // Unmapped registers (bus pull-ups)
+                TX_DATA_REG:   rdata = 16'hFFFF;         // Write-only register
+                TX_BYTE_REG:   rdata = 16'hFFFF;         // Write-only register  
+                RX_DATA_REG:   rdata = rx_data_reg;      // Pre-registered FIFO data
+                TX_STATUS_REG: rdata = tx_status_reg;    // Pre-registered status
+                RX_STATUS_REG: rdata = rx_status_reg;    // Pre-registered status
+                CONTROL_REG:   rdata = control_reg_read; // Pre-registered control
+                default:       rdata = 16'hFFFF;         // Unmapped registers (bus pull-ups)
             endcase
         end
     end
