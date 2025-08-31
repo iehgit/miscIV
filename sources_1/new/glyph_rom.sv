@@ -52,33 +52,33 @@ function automatic [63:0] get_glyph_data(input [6:0] ascii);
         7'h3F: return 64'h3C660C1818001800;  // ?
         7'h40: return 64'h3C666E6A6E603C00;  // @
         
-        // Letters A-Z and a-z (both map to same uppercase glyph)
-        7'h41, 7'h61: return 64'h3C66667E66666600;  // A and a
-        7'h42, 7'h62: return 64'h7C667C6666667C00;  // B and b
-        7'h43, 7'h63: return 64'h3C66606060663C00;  // C and c
-        7'h44, 7'h64: return 64'h7C66666666667C00;  // D and d
-        7'h45, 7'h65: return 64'h7E607C6060607E00;  // E and e
-        7'h46, 7'h66: return 64'h7E607C6060606000;  // F and f
-        7'h47, 7'h67: return 64'h3C66606E66663E00;  // G and g
-        7'h48, 7'h68: return 64'h6666667E66666600;  // H and h
-        7'h49, 7'h69: return 64'h7E18181818187E00;  // I and i
-        7'h4A, 7'h6A: return 64'h3E0C0C0C0CCC7800;  // J and j
-        7'h4B, 7'h6B: return 64'h666C7870786C6600;  // K and k
-        7'h4C, 7'h6C: return 64'h6060606060607E00;  // L and l
-        7'h4D, 7'h6D: return 64'hC6EEFE6666666600;  // M and m
-        7'h4E, 7'h6E: return 64'h6676766E6E666600;  // N and n
-        7'h4F, 7'h6F: return 64'h3C66666666663C00;  // O and o
-        7'h50, 7'h70: return 64'h7C66667C60606000;  // P and p
-        7'h51, 7'h71: return 64'h3C666666663C0E00;  // Q and q
-        7'h52, 7'h72: return 64'h7C66667C786C6600;  // R and r
-        7'h53, 7'h73: return 64'h3C66603C06663C00;  // S and s
-        7'h54, 7'h74: return 64'h7E18181818181800;  // T and t
-        7'h55, 7'h75: return 64'h6666666666663C00;  // U and u
-        7'h56, 7'h76: return 64'h6666666666663C00;  // V and v
-        7'h57, 7'h77: return 64'h666666666EFE6600;  // W and w
-        7'h58, 7'h78: return 64'h66663C3C66666600;  // X and x
-        7'h59, 7'h79: return 64'h6666663C18181800;  // Y and y
-        7'h5A, 7'h7A: return 64'h7E060C1830607E00;  // Z and z
+        // Uppercase Letters A-Z
+        7'h41: return 64'h3C66667E66666600;  // A
+        7'h42: return 64'h7C667C6666667C00;  // B
+        7'h43: return 64'h3C66606060663C00;  // C
+        7'h44: return 64'h7C66666666667C00;  // D
+        7'h45: return 64'h7E607C6060607E00;  // E
+        7'h46: return 64'h7E607C6060606000;  // F
+        7'h47: return 64'h3C66606E66663E00;  // G
+        7'h48: return 64'h6666667E66666600;  // H
+        7'h49: return 64'h7E18181818187E00;  // I
+        7'h4A: return 64'h3E0C0C0C0CCC7800;  // J
+        7'h4B: return 64'h666C7870786C6600;  // K
+        7'h4C: return 64'h6060606060607E00;  // L
+        7'h4D: return 64'hC6EEFE6666666600;  // M
+        7'h4E: return 64'h6676766E6E666600;  // N
+        7'h4F: return 64'h3C66666666663C00;  // O
+        7'h50: return 64'h7C66667C60606000;  // P
+        7'h51: return 64'h3C666666663C0E00;  // Q
+        7'h52: return 64'h7C66667C786C6600;  // R
+        7'h53: return 64'h3C66603C06663C00;  // S
+        7'h54: return 64'h7E18181818181800;  // T
+        7'h55: return 64'h6666666666663C00;  // U
+        7'h56: return 64'h6666666666663C00;  // V
+        7'h57: return 64'h666666666EFE6600;  // W
+        7'h58: return 64'h66663C3C66666600;  // X
+        7'h59: return 64'h6666663C18181800;  // Y
+        7'h5A: return 64'h7E060C1830607E00;  // Z
         
         7'h5B: return 64'h3C30303030303C00;  // [
         7'h5C: return 64'h6030301818060300;  // \
@@ -86,6 +86,34 @@ function automatic [63:0] get_glyph_data(input [6:0] ascii);
         7'h5E: return 64'h183C660000000000;  // ^
         7'h5F: return 64'h00000000000000FF;  // _
         7'h60: return 64'h3018000000000000;  // `
+        
+        // Lowercase Letters a-z
+        7'h61: return 64'h00003C063E663E00;  // a
+        7'h62: return 64'h60607C6666667C00;  // b
+        7'h63: return 64'h00003C6660663C00;  // c
+        7'h64: return 64'h06063E6666663E00;  // d
+        7'h65: return 64'h00003C667E603C00;  // e
+        7'h66: return 64'h1C307C3030303000;  // f
+        7'h67: return 64'h00003E66663E067C;  // g
+        7'h68: return 64'h60607C6666666600;  // h
+        7'h69: return 64'h1800381818183C00;  // i
+        7'h6A: return 64'h0C001C0C0C0CCC78;  // j
+        7'h6B: return 64'h6060666C786C6600;  // k
+        7'h6C: return 64'h3818181818183C00;  // l
+        7'h6D: return 64'h0000FED6D6D6D600;  // m
+        7'h6E: return 64'h00007C6666666600;  // n
+        7'h6F: return 64'h00003C6666663C00;  // o
+        7'h70: return 64'h00007C66667C6060;  // p
+        7'h71: return 64'h00003E66663E0606;  // q
+        7'h72: return 64'h00007C6660606000;  // r
+        7'h73: return 64'h00003E603C067C00;  // s
+        7'h74: return 64'h00307C3030301C00;  // t
+        7'h75: return 64'h00006666666E3E00;  // u
+        7'h76: return 64'h0000666666663C00;  // v
+        7'h77: return 64'h0000C6D6D6FE6C00;  // w
+        7'h78: return 64'h0000663C183C6600;  // x
+        7'h79: return 64'h00006666663E067C;  // y
+        7'h7A: return 64'h00007E0C18307E00;  // z
         
         7'h7B: return 64'h1C30303060303030;  // {
         7'h7C: return 64'h1818181818181818;  // |
