@@ -100,7 +100,7 @@ All I/O devices are accessed via memory-mapped registers at addresses 0x8000-0xF
 | 0xFFE2  | TX_STATUS | R   | [3]=Full, [2]=Empty, [1]=Busy              |
 | 0xFFE3  | RX_STATUS | R   | [3]=Full, [2]=Empty, [1]=Avail, [0]=Padded |
 | 0xFFE4  | TX_BYTE   | W   | Transmit single byte                       |
-| 0xFFE5  | CONTROL   | R/W | [1:0]=Baud rate select                     |
+| 0xFFE5  | CONTROL   | W   | [1:0]=Baud rate select                     |
 
 **BAUD RATES:**
 - 00 =  9600 baud (default)

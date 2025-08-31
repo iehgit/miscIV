@@ -120,7 +120,6 @@ module uart_controller (
     logic [15:0] rx_data_reg;      // Registered FIFO output
     logic [15:0] tx_status_reg;    // Registered TX status  
     logic [15:0] rx_status_reg;    // Registered RX status
-    logic [15:0] control_reg_read; // Registered control register for reads
     
     logic        bit_boundary;        // Pulse at start of each bit period
     logic        sample_point;        // Pulse at middle of each bit period (RX sampling)
@@ -478,9 +477,6 @@ module uart_controller (
         // Register status signals every cycle for consistent timing
         tx_status_reg <= tx_status;
         rx_status_reg <= rx_status;
-        
-        // Register control register for reads
-        control_reg_read <= control_reg;
     end
     
     // Fast combinational read multiplexer using pre-registered values
@@ -493,7 +489,7 @@ module uart_controller (
                 RX_DATA_REG:   rdata = rx_data_reg;      // Pre-registered FIFO data
                 TX_STATUS_REG: rdata = tx_status_reg;    // Pre-registered status
                 RX_STATUS_REG: rdata = rx_status_reg;    // Pre-registered status
-                CONTROL_REG:   rdata = control_reg_read; // Pre-registered control
+                CONTROL_REG:   rdata = 16'hFFFF;         // Write-only register
                 default:       rdata = 16'hFFFF;         // Unmapped registers (bus pull-ups)
             endcase
         end
