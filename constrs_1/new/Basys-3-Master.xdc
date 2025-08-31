@@ -169,6 +169,7 @@ set_false_path -from [get_ports {JA1 JA2}]
 set_false_path -to [get_ports JA3]
 set_false_path -to [get_ports {{vgaRed[*]} {vgaGreen[*]} {vgaBlue[*]} Hsync Vsync}]
 set_false_path -to [get_ports {JB1 JB2 JB3 JB4 JB7 JB8 JB9}]
+set_false_path -from [get_ports {PS2Clk PS2Data}]
 
 # VGA clock wizard
 set_clock_groups -asynchronous -group [get_clocks clk_out1_clk_wiz_0] -group [get_clocks sys_clk_pin]
