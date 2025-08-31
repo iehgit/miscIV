@@ -100,8 +100,15 @@ All I/O devices are accessed via memory-mapped registers at addresses 0x8000-0xF
 | 0xFFE2  | TX_STATUS | R   | [3]=Full, [2]=Empty, [1]=Busy              |
 | 0xFFE3  | RX_STATUS | R   | [3]=Full, [2]=Empty, [1]=Avail, [0]=Padded |
 | 0xFFE4  | TX_BYTE   | W   | Transmit single byte                       |
+| 0xFFE5  | CONTROL   | R/W | [1:0]=Baud rate select                     |
 
-**NOTES:** 9600 baud, 8N1. 4-entry FIFOs for TX and RX. Word mode sends/receives 2 characters. RX pads single chars with 0x00 after timeout.
+**BAUD RATES:**
+- 00 =  9600 baud (default)
+- 01 = 19200 baud
+- 10 = 38400 baud
+- 11 = 57600 baud
+
+**NOTES:** 8N1 format. 8-entry FIFOs for TX and RX. Word mode sends/receives 2 characters. RX pads single chars with 0x00 after timeout.
 
 ### GPU (0xFFD0-0xFFDF)
 
